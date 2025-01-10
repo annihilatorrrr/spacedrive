@@ -5,6 +5,7 @@ import {
 	ToastDefautlColor,
 	useLibraryMutation,
 	usePlausibleEvent,
+	useRspcLibraryContext,
 	useZodForm
 } from '@sd/client';
 import { Dialog, InputField, useDialog, UseDialogProps, z } from '@sd/ui';
@@ -22,10 +23,12 @@ export type AssignTagItems = Array<
 
 export function useAssignItemsToTag() {
 	const submitPlausibleEvent = usePlausibleEvent();
+	const rspc = useRspcLibraryContext();
 
 	const mutation = useLibraryMutation(['tags.assign'], {
 		onSuccess: () => {
 			submitPlausibleEvent({ event: { type: 'tagAssign' } });
+			rspc.queryClient.invalidateQueries({ queryKey: ['search.paths'] });
 		}
 	});
 
@@ -85,8 +88,9 @@ export default (
 			title={t('create_new_tag')}
 			description={t('create_new_tag_description')}
 			ctaLabel={t('create')}
+			closeLabel={t('close')}
 		>
-			<div className="relative mt-3 ">
+			<div className="relative mt-3">
 				<InputField
 					{...form.register('name', { required: true })}
 					placeholder={t('name')}

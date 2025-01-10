@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use super::task::TaskId;
+use super::task::{Task, TaskId};
 
 /// Task system's error type definition, representing when internal errors occurs.
 #[derive(Debug, thiserror::Error)]
@@ -11,6 +11,8 @@ pub enum SystemError {
 	TaskAborted(TaskId),
 	#[error("task join error <task_id='{0}'>")]
 	TaskJoin(TaskId),
+	#[error("task timeout error <task_id='{0}'>")]
+	TaskTimeout(TaskId),
 	#[error("forced abortion for task <task_id='{0}'> timed out")]
 	TaskForcedAbortTimeout(TaskId),
 }
@@ -26,3 +28,8 @@ pub trait RunError: Error + fmt::Debug + Send + Sync + 'static {}
 /// [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html).
 /// So you will not need to implement this trait for your error type, just implement the `Error` and `Debug`
 impl<T: Error + fmt::Debug + Send + Sync + 'static> RunError for T {}
+
+/// A task system dispatcher error type, returning tasks when the task system has shutdown.
+#[derive(Debug, thiserror::Error)]
+#[error("task system already shutdown and can't dispatch more tasks: <tasks_count={}>", .0.len())]
+pub struct DispatcherShutdownError<E: RunError>(pub Vec<Box<dyn Task<E>>>);

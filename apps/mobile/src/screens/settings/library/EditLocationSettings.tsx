@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 import { Controller } from 'react-hook-form';
 import { Alert, Text, View } from 'react-native';
 import { z } from 'zod';
-import { useLibraryMutation, useLibraryQuery, useNormalisedCache, useZodForm } from '@sd/client';
-import { Input } from '~/components/form/Input';
+import { useLibraryMutation, useLibraryQuery, useZodForm } from '@sd/client';
 import ScreenContainer from '~/components/layout/ScreenContainer';
 import { AnimatedButton } from '~/components/primitive/Button';
 import { Divider } from '~/components/primitive/Divider';
+import { Input } from '~/components/primitive/Input';
 import { toast } from '~/components/primitive/Toast';
 import SettingsButton from '~/components/settings/SettingsButton';
 import { SettingsInputInfo, SettingsTitle } from '~/components/settings/SettingsContainer';
@@ -33,7 +33,6 @@ const EditLocationSettingsScreen = ({
 	const { id } = route.params;
 
 	const queryClient = useQueryClient();
-	const cache = useNormalisedCache();
 
 	const form = useZodForm({ schema });
 
@@ -41,8 +40,8 @@ const EditLocationSettingsScreen = ({
 		onError: (e) => console.log({ e }),
 		onSuccess: () => {
 			form.reset(form.getValues());
-			queryClient.invalidateQueries(['locations.list']);
-			toast({ type: 'success', text: 'Location updated!' });
+			queryClient.invalidateQueries({ queryKey: ['locations.list'] });
+			toast.success('Location updated!');
 			// TODO: navigate back & reset input focus!
 		}
 	});
@@ -91,22 +90,19 @@ const EditLocationSettingsScreen = ({
 		});
 	}, [form, navigation, onSubmit]);
 
-	useLibraryQuery(['locations.getWithRules', id], {
-		onSuccess: (dataRaw) => {
-			cache.withNodes(dataRaw?.nodes);
-			const data = cache.withCache(dataRaw?.item);
-
-			if (data && !form.formState.isDirty)
-				form.reset({
-					displayName: data.name,
-					localPath: data.path,
-					indexer_rules_ids: data.indexer_rules.map((i) => i.id.toString()),
-					generatePreviewMedia: data.generate_preview_media,
-					syncPreviewMedia: data.sync_preview_media,
-					hidden: data.hidden
-				});
-		}
-	});
+	const query = useLibraryQuery(['locations.getWithRules', id]);
+	useEffect(() => {
+		const data = query.data;
+		if (data && !form.formState.isDirty)
+			form.reset({
+				displayName: data.name,
+				localPath: data.path,
+				indexer_rules_ids: data.indexer_rules.map((i) => i.id.toString()),
+				generatePreviewMedia: data.generate_preview_media,
+				syncPreviewMedia: data.sync_preview_media,
+				hidden: data.hidden
+			});
+	}, [form, query.data]);
 
 	const fullRescan = useLibraryMutation('locations.fullRescan');
 
@@ -163,8 +159,8 @@ const EditLocationSettingsScreen = ({
 				<SettingsButton
 					title="Reindex"
 					description="Perform a full rescan of this location"
-					buttonPress={() =>
-						fullRescan.mutate({ location_id: id, reidentify_objects: true })
+					onPress={
+						() => fullRescan.mutate({ location_id: id, reidentify_objects: false }) //FIXME: The famous serializing error for fullRescan. Keep this false until it's fixed.
 					}
 					buttonText="Full Reindex"
 					buttonIcon={<ArrowsClockwise color="white" size={20} />}
@@ -177,7 +173,7 @@ const EditLocationSettingsScreen = ({
 					description="Extract data from Library as an archive, useful to preserve Location folder structure."
 					buttonText="Archive"
 					buttonIcon={<Archive color="white" size={20} />}
-					buttonPress={() => Alert.alert('Archiving locations is coming soon...')}
+					onPress={() => Alert.alert('Archiving locations is coming soon...')}
 					buttonVariant="outline"
 					buttonTextStyle="text-white font-bold"
 					infoContainerStyle={'w-[60%]'}
@@ -187,7 +183,7 @@ const EditLocationSettingsScreen = ({
 					description="This will not delete the actual folder on disk. Preview media will be...???"
 					buttonText="Delete"
 					buttonIcon={<Trash color="white" size={20} />}
-					buttonPress={() => Alert.alert('Deleting locations is coming soon...')}
+					onPress={() => Alert.alert('Deleting locations is coming soon...')}
 					buttonVariant="danger"
 					buttonTextStyle="text-white font-bold"
 					infoContainerStyle={'w-[60%]'}

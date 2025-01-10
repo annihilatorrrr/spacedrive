@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useLibraryQuery, useSelector } from '@sd/client';
 import { explorerStore } from '~/app/$libraryId/Explorer/store';
@@ -22,15 +23,24 @@ export const useRedirectToNewLocation = () => {
 
 	const hasIndexerJob = jobGroups
 		?.flatMap((j) => j.jobs)
-		.some(
-			(j) =>
-				j.name === 'indexer' &&
-				(j.metadata as any)?.location.id === newLocation &&
-				(j.completed_task_count > 0 || j.completed_at != null)
-		);
+		.filter((j) => j.name === 'Indexer')
+		.some((j) => {
+			for (const metadata of j.metadata) {
+				if (metadata.type === 'input' && metadata.metadata.type === 'location') {
+					return (
+						metadata.metadata.data.id === newLocation &&
+						(j.completed_task_count > 0 || j.completed_at != null)
+					);
+				}
+			}
 
-	if (hasIndexerJob) {
-		navigate(`/${libraryId}/location/${newLocation}`);
-		explorerStore.newLocationToRedirect = null;
-	}
+			return false;
+		});
+
+	useEffect(() => {
+		if (hasIndexerJob) {
+			navigate(`/${libraryId}/location/${newLocation}`);
+			explorerStore.newLocationToRedirect = null;
+		}
+	}, [hasIndexerJob, libraryId, newLocation, navigate]);
 };

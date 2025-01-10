@@ -4,25 +4,23 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct HeaderFile {
-	// Request ID
-	pub(crate) id: Uuid,
-	pub(crate) library_id: Uuid,
-	pub(crate) file_path_id: Uuid,
-	pub(crate) range: Range,
-}
-
 /// TODO
 #[derive(Debug, PartialEq, Eq)]
 pub enum Header {
-	// TODO: Split out cause this is a broadcast
+	/// Basic pin protocol for demonstrating the P2P system
 	Ping,
+	/// Spacedrop file sending
 	Spacedrop(SpaceblockRequests),
-	Sync(Uuid),
-	File(HeaderFile),
+	/// Used for sending sync messages between nodes.
+	Sync,
 	// A HTTP server used for rspc requests and streaming files
-	Http,
+	RspcRemote,
+	// Request a file within a library
+	// We don't include a library ID here as it's taken care of by `sd_p2p_tunnel::Tunnel`.
+	LibraryFile {
+		file_path_id: Uuid,
+		range: Range,
+	},
 }
 
 #[derive(Debug, Error)]
@@ -33,12 +31,12 @@ pub enum HeaderError {
 	DiscriminatorInvalid(u8),
 	#[error("error reading spacedrop request: {0}")]
 	SpacedropRequest(#[from] SpaceblockRequestsError),
-	#[error("error reading sync request: {0}")]
-	SyncRequest(decode::Error),
-	#[error("error reading header file: {0}")]
-	HeaderFile(decode::Error),
-	#[error("error invalid header file discriminator '{0}'")]
-	HeaderFileDiscriminatorInvalid(u8),
+	#[error("error with library file decode '{0}'")]
+	LibraryFileDecodeError(decode::Error),
+	#[error("error with library file io '{0}'")]
+	LibraryFileIoError(std::io::Error),
+	#[error("invalid range discriminator for library file req '{0}'")]
+	LibraryDiscriminatorInvalid(u8),
 }
 
 impl Header {
@@ -53,42 +51,32 @@ impl Header {
 				SpaceblockRequests::from_stream(stream).await?,
 			)),
 			1 => Ok(Self::Ping),
-			3 => Ok(Self::Sync(
-				decode::uuid(stream)
-					.await
-					.map_err(HeaderError::SyncRequest)?,
-			)),
-			4 => Ok(Self::File(HeaderFile {
-				id: decode::uuid(stream)
-					.await
-					.map_err(HeaderError::HeaderFile)?,
-				library_id: decode::uuid(stream)
-					.await
-					.map_err(HeaderError::HeaderFile)?,
+			3 => Ok(Self::Sync),
+			5 => Ok(Self::RspcRemote),
+			6 => Ok(Self::LibraryFile {
 				file_path_id: decode::uuid(stream)
 					.await
-					.map_err(HeaderError::HeaderFile)?,
+					.map_err(HeaderError::LibraryFileDecodeError)?,
 				range: match stream
 					.read_u8()
 					.await
-					.map_err(|err| HeaderError::HeaderFile(err.into()))?
+					.map_err(HeaderError::LibraryFileIoError)?
 				{
 					0 => Range::Full,
 					1 => {
 						let start = stream
 							.read_u64_le()
 							.await
-							.map_err(|err| HeaderError::HeaderFile(err.into()))?;
+							.map_err(HeaderError::LibraryFileIoError)?;
 						let end = stream
 							.read_u64_le()
 							.await
-							.map_err(|err| HeaderError::HeaderFile(err.into()))?;
+							.map_err(HeaderError::LibraryFileIoError)?;
 						Range::Partial(start..end)
 					}
-					i => return Err(HeaderError::HeaderFileDiscriminatorInvalid(i)),
+					d => return Err(HeaderError::LibraryDiscriminatorInvalid(d)),
 				},
-			})),
-			5 => Ok(Self::Http),
+			}),
 			d => Err(HeaderError::DiscriminatorInvalid(d)),
 		}
 	}
@@ -101,25 +89,17 @@ impl Header {
 				bytes
 			}
 			Self::Ping => vec![1],
-			Self::Sync(uuid) => {
-				let mut bytes = vec![3];
-				encode::uuid(&mut bytes, uuid);
-				bytes
-			}
-			Self::File(HeaderFile {
-				id,
-				library_id,
+			Self::Sync => vec![3],
+			Self::RspcRemote => vec![5],
+			Self::LibraryFile {
 				file_path_id,
 				range,
-			}) => {
-				let mut buf = vec![4];
-				encode::uuid(&mut buf, id);
-				encode::uuid(&mut buf, library_id);
+			} => {
+				let mut buf = vec![6];
 				encode::uuid(&mut buf, file_path_id);
 				buf.extend_from_slice(&range.to_bytes());
 				buf
 			}
-			Self::Http => vec![5],
 		}
 	}
 }

@@ -17,7 +17,7 @@ const __debug = env.NODE_ENV === 'debug'
  * @returns {Promise<string?>}
  */
 export async function tauriUpdaterKey(nativeDeps) {
-	if (env.TAURI_PRIVATE_KEY) return null
+	if (env.TAURI_SIGNING_PRIVATE_KEY) return null
 
 	// pnpm exec tauri signer generate -w
 	const privateKeyPath = path.join(nativeDeps, 'tauri.key')
@@ -44,8 +44,8 @@ export async function tauriUpdaterKey(nativeDeps) {
 		if (!(publicKey && privateKey)) throw new Error('Empty keys')
 	}
 
-	env.TAURI_PRIVATE_KEY = privateKey
-	env.TAURI_KEY_PASSWORD = ''
+	env.TAURI_SIGNING_PRIVATE_KEY = privateKey
+	env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 	return publicKey
 }
 
@@ -53,30 +53,32 @@ export async function tauriUpdaterKey(nativeDeps) {
  * @param {string} root
  * @param {string} nativeDeps
  * @param {string[]} targets
- * @param {string[]} bundles
  * @param {string[]} args
  * @returns {Promise<string[]>}
  */
-export async function patchTauri(root, nativeDeps, targets, bundles, args) {
+export async function patchTauri(root, nativeDeps, targets, args) {
 	if (args.findIndex(e => e === '-c' || e === '--config') !== -1) {
 		throw new Error('Custom tauri build config is not supported.')
 	}
 
 	const osType = os.type()
 	const tauriPatch = {
-		tauri: {
-			bundle: {
-				macOS: { minimumSystemVersion: '' },
-				resources: {},
-			},
+		build: {
+			features: /** @type {string[]} */ ([]),
+		},
+		bundle: {
+			macOS: { minimumSystemVersion: '' },
+			resources: {},
+		},
+		plugins: {
 			updater: /** @type {{ pubkey?: string }} */ ({}),
 		},
 	}
 
 	if (osType === 'Linux') {
-		tauriPatch.tauri.bundle.resources = await linuxLibs(nativeDeps)
+		tauriPatch.bundle.resources = await linuxLibs(nativeDeps)
 	} else if (osType === 'Windows_NT') {
-		tauriPatch.tauri.bundle.resources = {
+		tauriPatch.bundle.resources = {
 			...(await windowsDLLs(nativeDeps)),
 			[path.join(nativeDeps, 'models', 'yolov8s.onnx')]: './models/yolov8s.onnx',
 		}
@@ -88,23 +90,24 @@ export async function patchTauri(root, nativeDeps, targets, bundles, args) {
 		.readFile(path.join(tauriRoot, 'tauri.conf.json'), 'utf-8')
 		.then(JSON.parse)
 
-	if (bundles.length === 0) {
-		const defaultBundles = tauriConfig.tauri?.bundle?.targets
-		if (Array.isArray(defaultBundles)) bundles.push(...defaultBundles)
-		if (bundles.length === 0) bundles.push('all')
-	}
-
-	if (args[0] === 'build') {
-		if (tauriConfig?.tauri?.updater?.active) {
-			const pubKey = await tauriUpdaterKey(nativeDeps)
-			if (pubKey != null) tauriPatch.tauri.updater.pubkey = pubKey
+	switch (args[0]) {
+		case 'dev':
+			tauriPatch.build.features.push('devtools')
+			break
+		case 'build': {
+			if (tauriConfig?.bundle?.createUpdaterArtifacts !== false) {
+				const pubKey = await tauriUpdaterKey(nativeDeps)
+				if (pubKey != null) tauriPatch.plugins.updater.pubkey = pubKey
+			}
+			break
 		}
 	}
 
 	if (osType === 'Darwin') {
+		// arm64 support was added in macOS 11.0
 		const macOSArm64MinimumVersion = '11.0'
 
-		let macOSMinimumVersion = tauriConfig?.tauri?.bundle?.macOS?.minimumSystemVersion
+		let macOSMinimumVersion = tauriConfig?.bundle?.macOS?.minimumSystemVersion
 
 		if (
 			(targets.includes('aarch64-apple-darwin') ||
@@ -125,7 +128,7 @@ export async function patchTauri(root, nativeDeps, targets, bundles, args) {
 
 		if (macOSMinimumVersion) {
 			env.MACOSX_DEPLOYMENT_TARGET = macOSMinimumVersion
-			tauriPatch.tauri.bundle.macOS.minimumSystemVersion = macOSMinimumVersion
+			tauriPatch.bundle.macOS.minimumSystemVersion = macOSMinimumVersion
 		} else {
 			throw new Error('No minimum macOS version detected, please review tauri.conf.json')
 		}

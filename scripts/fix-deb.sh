@@ -89,6 +89,17 @@ tar -xzf "${_tmp}/control.tar.gz" -C "${_tmp}/control"
 # Fix files owner
 chown -R root:root "$_tmp"
 
+# Rename sd-desktop to spacedrive
+find "${_tmp}" -name 'sd-desktop' -o \( -type f -name 'sd-desktop.*' \) | while IFS= read -r file
+do
+  filename="$(basename "$file")"
+  if [ "$filename" = "sd-desktop" ]; then
+    mv "$file" "$(dirname "$file")/spacedrive"
+  else
+    mv "$file" "$(dirname "$file")/spacedrive.${filename#*.}"
+  fi
+done
+
 # Create doc directory
 mkdir -p "$_tmp"/data/usr/share/{doc/spacedrive,man/man1}
 
@@ -119,6 +130,8 @@ curl -LSs 'https://gist.githubusercontent.com/HeavenVolkoff/0993c42bdb0b952eb5bf
 
 # Fill the Categories entry in .desktop file
 sed -i 's/^Categories=.*/Categories=System;FileTools;FileManager;/' "${_tmp}/data/usr/share/applications/spacedrive.desktop"
+# Rename sd-desktop to spacedrive
+sed -i 's/=sd-desktop/=spacedrive/' "${_tmp}/data/usr/share/applications/spacedrive.desktop"
 
 # Fix data permissions
 find "${_tmp}/data" -type d -exec chmod 755 {} +

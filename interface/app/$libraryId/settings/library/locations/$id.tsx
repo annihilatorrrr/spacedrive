@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Suspense } from 'react';
 import { Controller } from 'react-hook-form';
 import { useNavigate } from 'react-router';
-import { useCache, useLibraryMutation, useLibraryQuery, useNodes, useZodForm } from '@sd/client';
+import { useLibraryMutation, useLibraryQuery, useZodForm } from '@sd/client';
 import {
 	Button,
 	dialogManager,
@@ -57,8 +57,7 @@ const EditLocationForm = () => {
 	const locationDataQuery = useLibraryQuery(['locations.getWithRules', locationId], {
 		suspense: true
 	});
-	useNodes(locationDataQuery.data?.nodes);
-	const locationData = useCache(locationDataQuery.data?.item);
+	const locationData = locationDataQuery.data;
 
 	const form = useZodForm({
 		schema,
@@ -79,7 +78,7 @@ const EditLocationForm = () => {
 		},
 		onSuccess: () => {
 			form.reset(form.getValues());
-			queryClient.invalidateQueries(['locations.list']);
+			queryClient.invalidateQueries({ queryKey: ['locations.list'] });
 		}
 	});
 
@@ -98,7 +97,7 @@ const EditLocationForm = () => {
 	const { t } = useLocale();
 
 	return (
-		<Form form={form} onSubmit={onSubmit} className="h-full w-full">
+		<Form form={form} onSubmit={onSubmit} className="size-full">
 			<ModalLayout
 				title={t('edit_location')}
 				topRight={
@@ -148,18 +147,18 @@ const EditLocationForm = () => {
 
 						<RadioGroupField.Item disabled key="replica" value="replica">
 							<h1 className="font-bold">{t('replica')}</h1>
-							<p className="text-sm text-ink-faint ">{t('location_type_replica')}</p>
+							<p className="text-sm text-ink-faint">{t('location_type_replica')}</p>
 						</RadioGroupField.Item>
 					</RadioGroupField.Root>
 				</div>
 				<Divider />
 				<div className="space-y-2">
 					<ToggleSection>
-						<Label className="grow">{t('generatePreviewMedia_label')}</Label>
+						<Label className="grow">{t('generate_preview_media_label')}</Label>
 						<SwitchField {...form.register('generatePreviewMedia')} size="sm" />
 					</ToggleSection>
 					<ToggleSection>
-						<Label className="grow">{t('syncPreviewMedia_label')}</Label>
+						<Label className="grow">{t('sync_preview_media_label')}</Label>
 						<SwitchField {...form.register('syncPreviewMedia')} size="sm" />
 					</ToggleSection>
 					<ToggleSection>
@@ -200,7 +199,7 @@ const EditLocationForm = () => {
 								size="sm"
 								variant="outline"
 							>
-								<ArrowsClockwise className="-mt-0.5 mr-1.5 inline h-4 w-4" />
+								<ArrowsClockwise className="-mt-0.5 mr-1.5 inline size-4" />
 								{t('full_reindex')}
 							</Button>
 						</div>
@@ -213,7 +212,7 @@ const EditLocationForm = () => {
 								size="sm"
 								variant="outline"
 							>
-								<Archive className="-mt-0.5 mr-1.5 inline h-4 w-4" />
+								<Archive className="-mt-0.5 mr-1.5 inline size-4" />
 								{t('archive')}
 							</Button>
 						</div>
@@ -236,7 +235,7 @@ const EditLocationForm = () => {
 									));
 								}}
 							>
-								<Trash className="-mt-0.5 mr-1.5 inline h-4 w-4" />
+								<Trash className="-mt-0.5 mr-1.5 inline size-4" />
 								{t('delete')}
 							</Button>
 						</div>

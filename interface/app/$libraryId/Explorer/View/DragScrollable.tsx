@@ -1,9 +1,9 @@
 import { useExplorerLayoutStore } from '@sd/client';
 import { tw } from '@sd/ui';
 
-import { useTopBarContext } from '../../TopBar/Layout';
+import { useTopBarContext } from '../../TopBar/Context';
 import { useExplorerContext } from '../Context';
-import { PATH_BAR_HEIGHT } from '../ExplorerPath';
+import { PATH_BAR_HEIGHT } from '../ExplorerPathBar';
 import { useDragScrollable } from './useDragScrollable';
 
 const Trigger = tw.div`absolute inset-x-0 h-10 pointer-events-none`;

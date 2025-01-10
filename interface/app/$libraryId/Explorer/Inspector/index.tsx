@@ -27,20 +27,17 @@ import { useLocation } from 'react-router';
 import { Link as NavLink } from 'react-router-dom';
 import Sticky from 'react-sticky-el';
 import {
-	byteSize,
 	FilePath,
-	FilePathWithObject,
+	FilePathForFrontend,
 	getExplorerItemData,
 	getItemFilePath,
+	humanizeSize,
 	NonIndexedPathItem,
 	Object,
-	ObjectKindEnum,
 	ObjectWithFilePaths,
 	useBridgeQuery,
-	useCache,
 	useItemsAsObjects,
 	useLibraryQuery,
-	useNodes,
 	useSelector,
 	type ExplorerItem
 } from '@sd/client';
@@ -55,7 +52,9 @@ import AssignTagMenuItems from '../ContextMenu/AssignTagMenuItems';
 import { FileThumb } from '../FilePath/Thumb';
 import { useQuickPreviewStore } from '../QuickPreview/store';
 import { explorerStore } from '../store';
-import { uniqueId, useExplorerItemData } from '../util';
+import { useExplorerItemData } from '../useExplorerItemData';
+import { translateKindName, uniqueId } from '../util';
+import { RenamableItemText } from '../View/RenamableItemText';
 import FavoriteButton from './FavoriteButton';
 import MediaData from './MediaData';
 import Note from './Note';
@@ -70,10 +69,9 @@ export const INSPECTOR_WIDTH = 260;
 
 type MetadataDate = Date | { from: Date; to: Date } | null;
 
-const DATE_FORMAT = 'D MMM YYYY';
-const formatDate = (date: MetadataDate | string | undefined) => {
+const formatDate = (date: MetadataDate | string | undefined, dateFormat: string) => {
 	if (!date) return;
-	if (date instanceof Date || typeof date === 'string') return dayjs(date).format(DATE_FORMAT);
+	if (date instanceof Date || typeof date === 'string') return dayjs(date).format(dateFormat);
 
 	const { from, to } = date;
 
@@ -82,7 +80,7 @@ const formatDate = (date: MetadataDate | string | undefined) => {
 
 	const format = ['D', !sameMonth && 'MMM', !sameYear && 'YYYY'].filter(Boolean).join(' ');
 
-	return `${dayjs(from).format(format)} - ${dayjs(to).format(DATE_FORMAT)}`;
+	return `${dayjs(from).format(format)} - ${dayjs(to).format(dateFormat)}`;
 };
 
 interface Props extends HTMLAttributes<HTMLDivElement> {
@@ -101,13 +99,10 @@ export const Inspector = forwardRef<HTMLDivElement, Props>(
 			explorerStore.showMoreInfo = false;
 		}, [pathname]);
 
+		const { t } = useLocale();
 		return (
 			<div ref={ref} style={{ width: INSPECTOR_WIDTH, ...style }} {...props}>
-				<Sticky
-					scrollElement={explorer.scrollRef.current || undefined}
-					stickyClassName="!top-[40px]"
-					topOffset={-40}
-				>
+				<Sticky stickyClassName="!top-[40px]" topOffset={-40}>
 					{showThumbnail && (
 						<div className="relative mb-2 flex aspect-square items-center justify-center px-2">
 							{isNonEmpty(selectedItems) ? (
@@ -121,7 +116,7 @@ export const Inspector = forwardRef<HTMLDivElement, Props>(
 					<div className="flex select-text flex-col overflow-hidden rounded-lg border border-app-line bg-app-box py-0.5 shadow-app-shade/10">
 						{!isNonEmpty(selectedItems) ? (
 							<div className="flex h-[390px] items-center justify-center text-sm text-ink-dull">
-								Nothing selected
+								{t('nothing_selected')}
 							</div>
 						) : selectedItems.length === 1 ? (
 							<SingleItemMetadata item={selectedItems[0]} />
@@ -155,11 +150,11 @@ const Thumbnails = ({ items }: { items: ExplorerItem[] }) => {
 					className={clsx(
 						thumbs.length > 1 && '!absolute',
 						i === 0 && thumbs.length > 1 && 'z-30 !h-[76%] !w-[76%]',
-						i === 1 && 'z-20 !h-[80%] !w-[80%] rotate-[-5deg]',
+						i === 1 && 'z-20 !h-4/5 !w-4/5 rotate-[-5deg]',
 						i === 2 && 'z-10 !h-[84%] !w-[84%] rotate-[7deg]'
 					)}
 					childClassName={(type) =>
-						type.variant !== 'icon' && thumbs.length > 1
+						type !== 'icon' && thumbs.length > 1
 							? 'shadow-md shadow-app-shade'
 							: undefined
 					}
@@ -172,14 +167,13 @@ const Thumbnails = ({ items }: { items: ExplorerItem[] }) => {
 
 export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 	let objectData: Object | ObjectWithFilePaths | null = null;
-	let filePathData: FilePath | FilePathWithObject | null = null;
+	let filePathData: FilePath | FilePathForFrontend | null = null;
 	let ephemeralPathData: NonIndexedPathItem | null = null;
 
-	const { t } = useLocale();
+	const { t, dateFormat } = useLocale();
 
 	const result = useLibraryQuery(['locations.list']);
-	useNodes(result.data?.nodes);
-	const locations = useCache(result.data?.items);
+	const locations = result.data || [];
 
 	switch (item.type) {
 		case 'NonIndexedPath': {
@@ -209,10 +203,10 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 					...new Set(
 						(item.item?.file_paths || []).map((fp) => fp.location_id).filter(Boolean)
 					)
-			  ]
+				]
 			: item.type === 'Path'
-			? [item.item.location_id]
-			: [];
+				? [item.item.location_id]
+				: [];
 	}, [item]);
 
 	const fileLocations =
@@ -223,12 +217,11 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 	const tagsQuery = useLibraryQuery(['tags.getForObject', objectData?.id ?? -1], {
 		enabled: objectData != null && readyToFetch
 	});
-	useNodes(tagsQuery.data?.nodes);
-	const tags = useCache(tagsQuery.data?.items);
+	const tags = tagsQuery.data;
 
-	const labels = useLibraryQuery(['labels.getForObject', objectData?.id ?? -1], {
-		enabled: objectData != null && readyToFetch
-	});
+	// const labels = useLibraryQuery(['labels.getForObject', objectData?.id ?? -1], {
+	// 	enabled: objectData != null && readyToFetch
+	// });
 
 	const { libraryId } = useZodRouteParams(LibraryIdParamsSchema);
 
@@ -237,21 +230,21 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 	});
 
 	const filesMediaData = useLibraryQuery(['files.getMediaData', objectData?.id ?? -1], {
-		enabled: objectData?.kind === ObjectKindEnum.Image && readyToFetch
+		enabled: objectData != null && readyToFetch
 	});
 
 	const ephemeralLocationMediaData = useBridgeQuery(
 		['ephemeralFiles.getMediaData', ephemeralPathData != null ? ephemeralPathData.path : ''],
 		{
-			enabled: ephemeralPathData?.kind === ObjectKindEnum.Image && readyToFetch
+			enabled: ephemeralPathData != null && readyToFetch
 		}
 	);
 
-	const mediaData = filesMediaData ?? ephemeralLocationMediaData ?? null;
+	const mediaData = filesMediaData.data ?? ephemeralLocationMediaData.data ?? null;
 
 	const fullPath = queriedFullPath.data ?? ephemeralPathData?.path;
 
-	const { name, isDir, kind, size, casId, dateCreated, dateAccessed, dateModified, dateIndexed } =
+	const { isDir, kind, size, casId, dateCreated, dateAccessed, dateModified, dateIndexed } =
 		useExplorerItemData(item);
 
 	const pubId = objectData != null ? uniqueId(objectData) : null;
@@ -270,10 +263,17 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 
 	return (
 		<>
-			<h3 className="truncate px-3 pb-1 pt-2 text-base font-bold text-ink">
-				{name}
-				{extension && `.${extension}`}
-			</h3>
+			<div className="px-2 pb-1 pt-2">
+				<RenamableItemText
+					item={item}
+					toggleBy="click"
+					lines={2}
+					editLines={2}
+					selected
+					allowHighlight={false}
+					className="!text-base !font-bold !text-ink"
+				/>
+			</div>
 
 			{objectData && (
 				<div className="mx-3 mb-0.5 mt-1 flex flex-row space-x-0.5 text-ink">
@@ -283,12 +283,12 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 
 					<Tooltip label={t('encrypt')}>
 						<Button size="icon">
-							<Lock className="h-[18px] w-[18px]" />
+							<Lock className="size-[18px]" />
 						</Button>
 					</Tooltip>
 					<Tooltip label={t('share')}>
 						<Button size="icon">
-							<Link className="h-[18px] w-[18px]" />
+							<Link className="size-[18px]" />
 						</Button>
 					</Tooltip>
 				</div>
@@ -300,22 +300,38 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 				<MetaData
 					icon={Cube}
 					label={t('size')}
-					value={!!ephemeralPathData && ephemeralPathData.is_dir ? null : `${size}`}
+					value={
+						!!ephemeralPathData && ephemeralPathData.is_dir
+							? null
+							: `${size.value} ${t(`size_${size.unit.toLowerCase()}`)}`
+					}
 				/>
 
-				<MetaData icon={Clock} label={t('created')} value={formatDate(dateCreated)} />
+				<MetaData
+					icon={Clock}
+					label={t('created')}
+					value={formatDate(dateCreated, dateFormat)}
+				/>
 
-				<MetaData icon={Eraser} label={t('modified')} value={formatDate(dateModified)} />
+				<MetaData
+					icon={Eraser}
+					label={t('modified')}
+					value={formatDate(dateModified, dateFormat)}
+				/>
 
 				{ephemeralPathData != null || (
-					<MetaData icon={Barcode} label={t('indexed')} value={formatDate(dateIndexed)} />
+					<MetaData
+						icon={Barcode}
+						label={t('indexed')}
+						value={formatDate(dateIndexed, dateFormat)}
+					/>
 				)}
 
 				{ephemeralPathData != null || (
 					<MetaData
 						icon={FolderOpen}
 						label={t('accessed')}
-						value={formatDate(dateAccessed)}
+						value={formatDate(dateAccessed, dateFormat)}
 					/>
 				)}
 
@@ -326,7 +342,7 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 					onClick={() => {
 						if (fullPath) {
 							navigator.clipboard.writeText(fullPath);
-							toast.info('Copied path to clipboard');
+							toast.info(t('path_copied_to_clipboard_title'));
 						}
 					}}
 				/>
@@ -348,18 +364,18 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 				</MetaContainer>
 			)}
 
-			{mediaData.data && <MediaData data={mediaData.data} />}
+			{mediaData && <MediaData data={mediaData} />}
 
 			<MetaContainer className="flex !flex-row flex-wrap gap-1 overflow-hidden">
-				<InfoPill>{isDir ? 'Folder' : kind}</InfoPill>
+				<InfoPill>{isDir ? t('folder') : translateKindName(kind)}</InfoPill>
 
 				{extension && <InfoPill>{extension}</InfoPill>}
 
-				{labels.data?.map((label) => (
+				{/* {labels.data?.map((label) => (
 					<InfoPill key={label.id} className="truncate !text-white">
 						{label.name}
 					</InfoPill>
-				))}
+				))} */}
 
 				{tags?.map((tag) => (
 					<NavLink key={tag.id} to={`/${libraryId}/tag/${tag.id}`}>
@@ -379,6 +395,7 @@ export const SingleItemMetadata = ({ item }: { item: ExplorerItem }) => {
 						<DropdownMenu.Root
 							trigger={<PlaceholderPill>{t('add_tag')}</PlaceholderPill>}
 							side="left"
+							className="z-[101]"
 							sideOffset={5}
 							alignOffset={-10}
 						>
@@ -425,23 +442,22 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 		enabled: readyToFetch && !isDragSelecting,
 		suspense: true
 	});
-	useNodes(tagsQuery.data?.nodes);
-	const tags = useCache(tagsQuery.data?.items);
+	const tags = tagsQuery.data;
 
-	const labels = useLibraryQuery(['labels.list'], {
-		enabled: readyToFetch && !isDragSelecting,
-		suspense: true
-	});
+	// const labels = useLibraryQuery(['labels.list'], {
+	// 	enabled: readyToFetch && !isDragSelecting,
+	// 	suspense: true
+	// });
 
 	const tagsWithObjects = useLibraryQuery(
 		['tags.getWithObjects', selectedObjects.map(({ id }) => id)],
 		{ enabled: readyToFetch && !isDragSelecting }
 	);
 
-	const labelsWithObjects = useLibraryQuery(
-		['labels.getWithObjects', selectedObjects.map(({ id }) => id)],
-		{ enabled: readyToFetch && !isDragSelecting }
-	);
+	// const labelsWithObjects = useLibraryQuery(
+	// 	['labels.getWithObjects', selectedObjects.map(({ id }) => id)],
+	// 	{ enabled: readyToFetch && !isDragSelecting }
+	// );
 
 	const getDate = useCallback((metadataDate: MetadataDate, date: Date) => {
 		date.setHours(0, 0, 0, 0);
@@ -465,9 +481,8 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 				(metadata, item) => {
 					const { kind, size, dateCreated, dateAccessed, dateModified, dateIndexed } =
 						getExplorerItemData(item);
-
 					if (item.type !== 'NonIndexedPath' || !item.item.is_dir) {
-						metadata.size = (metadata.size ?? BigInt(0)) + size.original;
+						metadata.size = (metadata.size ?? 0n) + size.bytes;
 					}
 
 					if (dateCreated)
@@ -503,9 +518,10 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 		[items, getDate]
 	);
 
-	const { t } = useLocale();
+	const { t, dateFormat } = useLocale();
 
 	const onlyNonIndexed = metadata.types.has('NonIndexedPath') && metadata.types.size === 1;
+	const filesSize = humanizeSize(metadata.size);
 
 	return (
 		<>
@@ -513,26 +529,34 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 				<MetaData
 					icon={Cube}
 					label={t('size')}
-					value={metadata.size !== null ? `${byteSize(metadata.size)}` : null}
+					value={
+						metadata.size !== null
+							? `${filesSize.value} ${t(`size_${filesSize.unit.toLowerCase()}s`)}`
+							: null
+					}
 				/>
-				<MetaData icon={Clock} label={t('created')} value={formatDate(metadata.created)} />
+				<MetaData
+					icon={Clock}
+					label={t('created')}
+					value={formatDate(metadata.created, dateFormat)}
+				/>
 				<MetaData
 					icon={Eraser}
 					label={t('modified')}
-					value={formatDate(metadata.modified)}
+					value={formatDate(metadata.modified, dateFormat)}
 				/>
 				{onlyNonIndexed || (
 					<MetaData
 						icon={Barcode}
 						label={t('indexed')}
-						value={formatDate(metadata.indexed)}
+						value={formatDate(metadata.indexed, dateFormat)}
 					/>
 				)}
 				{onlyNonIndexed || (
 					<MetaData
 						icon={FolderOpen}
 						label={t('accessed')}
-						value={formatDate(metadata.accessed)}
+						value={formatDate(metadata.accessed, dateFormat)}
 					/>
 				)}
 			</MetaContainer>
@@ -541,10 +565,10 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 
 			<MetaContainer className="flex !flex-row flex-wrap gap-1 overflow-hidden">
 				{[...metadata.kinds].map(([kind, items]) => (
-					<InfoPill key={kind}>{`${kind} (${items.length})`}</InfoPill>
+					<InfoPill key={kind}>{`${translateKindName(kind)} (${items.length})`}</InfoPill>
 				))}
 
-				{labels.data?.map((label) => {
+				{/* {labels.data?.map((label) => {
 					const objectsWithLabel = labelsWithObjects.data?.[label.id] ?? [];
 
 					if (objectsWithLabel.length === 0) return null;
@@ -561,7 +585,7 @@ const MultiItemMetadata = ({ items }: { items: ExplorerItem[] }) => {
 							{label.name} ({objectsWithLabel.length})
 						</InfoPill>
 					);
-				})}
+				})} */}
 
 				{tags?.map((tag) => {
 					const objectsWithTag = tagsWithObjects.data?.[tag.id] ?? [];
@@ -618,12 +642,14 @@ interface MetaDataProps {
 
 export const MetaData = ({ icon: Icon, label, value, tooltipValue, onClick }: MetaDataProps) => {
 	return (
-		<div className="flex items-center text-xs text-ink-dull" onClick={onClick}>
+		<div className="flex content-start justify-start text-xs text-ink-dull" onClick={onClick}>
 			{Icon && <Icon weight="bold" className="mr-2 shrink-0" />}
-			<span className="mr-2 flex-1 whitespace-nowrap">{label}</span>
+			<span className="mr-2 flex flex-1 items-start justify-items-start whitespace-nowrap">
+				{label}
+			</span>
 			<Tooltip
 				label={tooltipValue || value}
-				className="truncate text-ink"
+				className="truncate whitespace-pre text-ink"
 				tooltipClassName="max-w-none"
 			>
 				{value ?? '--'}

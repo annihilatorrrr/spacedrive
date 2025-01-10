@@ -25,7 +25,7 @@ Spacedrive is an open source cross-platform file manager, powered by a virtual d
 <br/>
 <br/>
 
-> UPDATE: Spacedrive is under active development, we are in the alpha stage and some features might be missing or disabled in the official release downloads.
+> UPDATE: Spacedrive moving into beta with v0.5 (coming early December 2024). Some major features are currently only accessible via feature flags.
 
 Organize files across many devices in one place. From cloud services to offline hard drives, Spacedrive combines the storage capacity and processing power of your devices into one personal distributed cloud, that is both secure and intuitive to use.
 
@@ -47,7 +47,7 @@ For independent creatives, hoarders and those that want to own their digital foo
   <a href="https://www.gnu.org/licenses/agpl-3.0">
     <img src="https://img.shields.io/static/v1?label=Licence&message=AGPL%20v3&color=000" />
   </a>
-  <img src="https://img.shields.io/static/v1?label=Bundled%20Size&message=16.3MB&color=0974B4" />
+  <img src="https://img.shields.io/static/v1?label=Bundled+size+(avg.)&message=76.26MB&color= 0974B4" />
   <img src="https://img.shields.io/static/v1?label=Stage&message=Alpha&color=2BB4AB" />
   <br />
 </p>
@@ -80,7 +80,7 @@ This project is using what I'm calling the **"PRRTT"** stack (Prisma, Rust, Reac
 
 - Prisma on the front-end? 🤯 Made possible thanks to [prisma-client-rust](https://github.com/brendonovich/prisma-client-rust), developed by [Brendonovich](https://github.com/brendonovich). Gives us access to the powerful migration CLI in development, along with the Prisma syntax for our schema. The application bundles with the Prisma query engine and codegen for a beautiful Rust API. Our lightweight migration runner is custom built for a desktop app context.
 - Tauri allows us to create a pure Rust native OS webview, without the overhead of your average Electron app. This brings the bundle size and average memory usage down dramatically. It also contributes to a more native feel, especially on macOS due to Safari's close integration with the OS.
-- We also use [rspc](https://rspc.dev) which allows us to define functions in Rust and call them on the Typescript frontend in a completely typesafe manner, so no unnecessary bugs make it into production!
+- We also use [rspc](https://rspc.dev), created by Oscar Beaumont, which allows us to define functions in Rust and call them on the TypeScript frontend in a completely typesafe manner.
 - The core (`sdcore`) is written in pure Rust.
 
 ## Monorepo structure:
@@ -91,7 +91,7 @@ This project is using what I'm calling the **"PRRTT"** stack (Prisma, Rust, Reac
 - `mobile`: A [React Native](https://reactnative.dev/) app.
 - `web`: A [React](https://reactjs.org) webapp.
 - `landing`: A [React](https://reactjs.org) app using [Next.js](https://nextjs.org).
-- `server`: A [Rust](https://www.rust-lang.org) server for the webapp. (planned)
+- `server`: A [Rust](https://www.rust-lang.org) server for the webapp.
 - `cli`: A [Rust](https://www.rust-lang.org) command line interface. (planned)
 - `storybook`: A [React](https://reactjs.org) storybook for the UI components.
 

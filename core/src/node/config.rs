@@ -1,13 +1,16 @@
 use crate::{
 	api::{notifications::Notification, BackendFeature},
-	object::media::thumbnail::preferences::ThumbnailerPreferences,
+	/*object::media::old_thumbnail::preferences::ThumbnailerPreferences,*/
 	util::version_manager::{Kind, ManagedVersion, VersionManager, VersionManagerError},
 };
 
-use sd_p2p2::Identity;
+use sd_cloud_schema::devices::DeviceOS;
+use sd_core_sync::DevicePubId;
+use sd_p2p::Identity;
 use sd_utils::error::FileIOError;
 
 use std::{
+	collections::HashSet,
 	path::{Path, PathBuf},
 	sync::Arc,
 };
@@ -25,6 +28,8 @@ use tokio::{
 use tracing::error;
 use uuid::Uuid;
 
+use super::HardwareModel;
+
 /// NODE_STATE_CONFIG_NAME is the name of the file which stores the NodeState
 pub const NODE_STATE_CONFIG_NAME: &str = "node_state.sdconfig";
 
@@ -37,25 +42,85 @@ pub enum P2PDiscoveryState {
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case", untagged)]
+#[serde(rename_all = "snake_case", tag = "type", content = "value")]
 pub enum Port {
-	Disabled,
 	#[default]
 	Random,
 	Discrete(u16),
 }
 
 impl Port {
-	pub fn is_random(&self) -> bool {
+	pub fn get(&self) -> u16 {
+		if is_in_docker() {
+			return 7373;
+		}
+
+		match self {
+			Port::Random => 0,
+			Port::Discrete(port) => *port,
+		}
+	}
+
+	pub fn is_default(&self) -> bool {
 		matches!(self, Port::Random)
 	}
 }
 
-/// NodeConfig is the configuration for a node. This is shared between all libraries and is stored in a JSON file on disk.
+pub fn is_in_docker() -> bool {
+	std::env::var("SD_DOCKER").as_deref() == Ok("true")
+}
+
+fn skip_if_false(value: &bool) -> bool {
+	!*value
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct NodeConfigP2P {
+	#[serde(default)]
+	pub discovery: P2PDiscoveryState,
+	#[serde(default, skip_serializing_if = "Port::is_default")]
+	pub port: Port,
+	#[serde(default, skip_serializing_if = "skip_if_false")]
+	pub disabled: bool,
+	#[serde(default, skip_serializing_if = "skip_if_false")]
+	pub disable_ipv6: bool,
+	#[serde(default, skip_serializing_if = "skip_if_false")]
+	pub disable_relay: bool,
+	#[serde(default, skip_serializing_if = "skip_if_false")]
+	pub enable_remote_access: bool,
+	/// A list of peer addresses to try and manually connect to, instead of relying on discovery.
+	///
+	/// All of these are valid values:
+	///  - `localhost`
+	///  - `spacedrive.com` or `spacedrive.com:3000`
+	///  - `127.0.0.1` or `127.0.0.1:300`
+	///  - `[::1]` or `[::1]:3000`
+	///
+	/// which is why we use `String` not `SocketAddr`
+	#[serde(default)]
+	pub manual_peers: HashSet<String>,
+}
+
+impl Default for NodeConfigP2P {
+	fn default() -> Self {
+		Self {
+			discovery: P2PDiscoveryState::Everyone,
+			port: Port::Random,
+			disabled: true,
+			disable_ipv6: true,
+			disable_relay: true,
+			enable_remote_access: false,
+			manual_peers: Default::default(),
+		}
+	}
+}
+
+/// NodeConfig is the configuration for a node.
+/// This is shared between all libraries and is stored in a JSON file on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)] // If you are adding `specta::Type` on this your probably about to leak the P2P private key
 pub struct NodeConfig {
 	/// id is a unique identifier for the current node. Each node has a public identifier (this one) and is given a local id for each library (done within the library code).
-	pub id: Uuid,
+	pub id: DevicePubId,
 	/// name is the display name of the current node. This is set by the user and is shown in the UI. // TODO: Length validation so it can fit in DNS record
 	pub name: String,
 	/// core level notifications
@@ -64,32 +129,27 @@ pub struct NodeConfig {
 	/// The p2p identity keypair for this node. This is used to identify the node on the network.
 	/// This keypair does effectively nothing except for provide libp2p with a stable peer_id.
 	#[serde(with = "identity_serde")]
+	// TODO(@fogodev): remove these from here, we must not store secret keys in plaintext...
+	// Put then on secret storage when we have a keyring compatible with all our supported platforms
 	pub identity: Identity,
 	/// P2P config
-	#[serde(default, skip_serializing_if = "Port::is_random")]
-	pub p2p_ipv4_port: Port,
-	#[serde(default, skip_serializing_if = "Port::is_random")]
-	pub p2p_ipv6_port: Port,
 	#[serde(default)]
-	pub p2p_discovery: P2PDiscoveryState,
+	pub p2p: NodeConfigP2P,
 	/// Feature flags enabled on the node
 	#[serde(default)]
 	pub features: Vec<BackendFeature>,
-	/// Authentication for Spacedrive Accounts
-	pub auth_token: Option<sd_cloud_api::auth::OAuthToken>,
-	/// URL of the Spacedrive API
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub sd_api_origin: Option<String>,
-	/// The aggreagation of many different preferences for the node
+	/// The aggregation of many different preferences for the node
 	pub preferences: NodePreferences,
-	// Model version for the image labeler
-	pub image_labeler_version: Option<String>,
+	/// Operating System of the node
+	pub os: DeviceOS,
+	/// Hardware model of the node
+	pub hardware_model: HardwareModel,
 
 	version: NodeConfigVersion,
 }
 
 mod identity_serde {
-	use sd_p2p2::Identity;
+	use sd_p2p::Identity;
 	use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 	pub fn serialize<S>(identity: &Identity, serializer: S) -> Result<S::Ok, S::Error>
@@ -114,7 +174,8 @@ mod identity_serde {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Type)]
 pub struct NodePreferences {
-	pub thumbnailer: ThumbnailerPreferences,
+	// pub thumbnailer: ThumbnailerPreferences,
+	// TODO(fogodev): introduce preferences to choose how many worker the task system should have
 }
 
 #[derive(
@@ -126,43 +187,44 @@ pub enum NodeConfigVersion {
 	V1 = 1,
 	V2 = 2,
 	V3 = 3,
+	V4 = 4,
+	V5 = 5,
 }
 
 impl ManagedVersion<NodeConfigVersion> for NodeConfig {
-	const LATEST_VERSION: NodeConfigVersion = NodeConfigVersion::V3;
+	const LATEST_VERSION: NodeConfigVersion = NodeConfigVersion::V5;
 	const KIND: Kind = Kind::Json("version");
 	type MigrationError = NodeConfigError;
 
 	fn from_latest_version() -> Option<Self> {
-		let mut name = match hostname::get() {
-			// SAFETY: This is just for display purposes so it doesn't matter if it's lossy
-			Ok(hostname) => hostname.to_string_lossy().into_owned(),
-			Err(e) => {
-				error!("Falling back to default node name as an error occurred getting your systems hostname: '{e:#?}'");
-				"my-spacedrive".into()
-			}
-		};
-		name.truncate(250);
+		#[cfg(not(any(target_os = "ios", target_os = "android")))]
+		let mut name = whoami::devicename();
 
-		#[cfg(feature = "ai")]
-		let image_labeler_version = Some(sd_ai::image_labeler::DEFAULT_MODEL_VERSION.to_string());
-		#[cfg(not(feature = "ai"))]
-		let image_labeler_version = None;
+		#[cfg(target_os = "ios")]
+		let mut name = "iOS Device".to_string();
+
+		#[cfg(target_os = "android")]
+		let mut name = "Android Device".to_string();
+
+		name.truncate(255);
+
+		let os = DeviceOS::from_env();
+		let hardware_model = HardwareModel::try_get().unwrap_or_else(|e| {
+			error!(?e, "Failed to get hardware model");
+			HardwareModel::Other
+		});
 
 		Some(Self {
-			id: Uuid::new_v4(),
+			id: Uuid::now_v7().into(),
 			name,
 			identity: Identity::default(),
-			p2p_ipv4_port: Port::Random,
-			p2p_ipv6_port: Port::Random,
-			p2p_discovery: P2PDiscoveryState::Everyone,
+			p2p: NodeConfigP2P::default(),
 			version: Self::LATEST_VERSION,
 			features: vec![],
 			notifications: vec![],
-			auth_token: None,
-			sd_api_origin: None,
 			preferences: NodePreferences::default(),
-			image_labeler_version,
+			os,
+			hardware_model,
 		})
 	}
 }
@@ -255,8 +317,142 @@ impl NodeConfig {
 							.map_err(|e| FileIOError::from((path, e)))?;
 					}
 
+					(NodeConfigVersion::V3, NodeConfigVersion::V4) => {
+						let mut config: Map<String, Value> =
+							serde_json::from_slice(&fs::read(path).await.map_err(|e| {
+								FileIOError::from((
+									path,
+									e,
+									"Failed to read node config file for migration",
+								))
+							})?)
+							.map_err(VersionManagerError::SerdeJson)?;
+
+						config.remove("id");
+						config.insert(
+							String::from("id"),
+							serde_json::to_value(Uuid::now_v7())
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						config.remove("name");
+
+						#[cfg(not(any(target_os = "ios", target_os = "android")))]
+						config.insert(
+							String::from("name"),
+							serde_json::to_value(whoami::devicename())
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						#[cfg(target_os = "ios")]
+						config.insert(
+							String::from("name"),
+							serde_json::to_value("iOS Device")
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						#[cfg(target_os = "android")]
+						config.insert(
+							String::from("name"),
+							serde_json::to_value("Android Device")
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						config.insert(
+							String::from("os"),
+							serde_json::to_value(std::env::consts::OS)
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						let a =
+							serde_json::to_vec(&config).map_err(VersionManagerError::SerdeJson)?;
+
+						fs::write(path, a)
+							.await
+							.map_err(|e| FileIOError::from((path, e)))?;
+					}
+
+					(NodeConfigVersion::V4, NodeConfigVersion::V5) => {
+						let mut config: Map<String, Value> =
+							serde_json::from_slice(&fs::read(path).await.map_err(|e| {
+								FileIOError::from((
+									path,
+									e,
+									"Failed to read node config file for migration",
+								))
+							})?)
+							.map_err(VersionManagerError::SerdeJson)?;
+
+						config.insert(
+							String::from("os"),
+							serde_json::to_value(DeviceOS::from_env())
+								.map_err(VersionManagerError::SerdeJson)?,
+						);
+						config.insert(
+							String::from("hardware_model"),
+							serde_json::to_value(
+								HardwareModel::try_get().unwrap_or(HardwareModel::Other),
+							)
+							.map_err(VersionManagerError::SerdeJson)?,
+						);
+
+						config.remove("features");
+						config.remove("auth_token");
+						config.remove("sd_api_origin");
+						config.remove("image_labeler_version");
+
+						// Verify that the ID isn't already set to a UUID v7. If it is, we don't want to overwrite it.
+						// Get the current ID, if it's a string, parse it as a UUID and check if it's a UUID v7.
+						// If it's not a UUID v7, set it to a UUID v7.
+						let id = config
+							.get("id")
+							.and_then(|v| v.as_str())
+							.and_then(|s| Uuid::parse_str(s).ok());
+						if let Some(id) = id {
+							if id.get_version() != Some(uuid::Version::Md5) {
+								config.remove("id");
+								config.insert(
+									String::from("id"),
+									serde_json::to_value(DevicePubId::from(Uuid::now_v7()))
+										.map_err(VersionManagerError::SerdeJson)?,
+								);
+							}
+						}
+						// config.remove("id");
+						// config.insert(
+						// 	String::from("id"),
+						// 	serde_json::to_value(DevicePubId::from(Uuid::now_v7()))
+						// 		.map_err(VersionManagerError::SerdeJson)?,
+						// );
+
+						// Create a .sdks file in the data directory if it doesn't exist
+						let data_directory = path
+							.parent()
+							.expect("Config path must have a parent directory");
+						let sdks_file = data_directory.join(".sdks");
+						if !sdks_file.exists() {
+							fs::write(&sdks_file, b"").await.map_err(|e| {
+								FileIOError::from((
+									sdks_file.clone(),
+									e,
+									"Failed to create .sdks file",
+								))
+							})?;
+						}
+
+						// Write the updated config back to disk
+						fs::write(
+							path,
+							serde_json::to_vec(&config).map_err(VersionManagerError::SerdeJson)?,
+						)
+						.await
+						.map_err(|e| {
+							FileIOError::from((path, e, "Failed to write back updated config"))
+						})?;
+					}
+
 					_ => {
-						error!("Node config version is not handled: {:?}", current);
+						error!(current_version = ?current, "Node config version is not handled;");
 						return Err(VersionManagerError::UnexpectedMigration {
 							current_version: current.int_value(),
 							next_version: next.int_value(),
@@ -296,18 +492,7 @@ impl Manager {
 		let data_directory_path = data_directory_path.as_ref().to_path_buf();
 		let config_file_path = data_directory_path.join(NODE_STATE_CONFIG_NAME);
 
-		let mut config = NodeConfig::load(&config_file_path).await?;
-
-		#[cfg(feature = "ai")]
-		if config.image_labeler_version.is_none() {
-			config.image_labeler_version =
-				Some(sd_ai::image_labeler::DEFAULT_MODEL_VERSION.to_string());
-		}
-
-		#[cfg(not(feature = "ai"))]
-		{
-			config.image_labeler_version = None;
-		}
+		let config = NodeConfig::load(&config_file_path).await?;
 
 		let (preferences_watcher_tx, _preferences_watcher_rx) =
 			watch::channel(config.preferences.clone());
@@ -323,11 +508,6 @@ impl Manager {
 	/// get will return the current NodeConfig in a read only state.
 	pub(crate) async fn get(&self) -> NodeConfig {
 		self.config.read().await.clone()
-	}
-
-	/// get a node config preferences watcher receiver
-	pub(crate) fn preferences_watcher(&self) -> watch::Receiver<NodePreferences> {
-		self.preferences_watcher_tx.subscribe()
 	}
 
 	/// data_directory returns the path to the directory storing the configuration data.

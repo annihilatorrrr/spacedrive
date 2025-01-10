@@ -1,5 +1,5 @@
 import { iconConfig } from '~/utils/contentlayer';
-import { toTitleCase } from '~/utils/util';
+import { toTitleCase } from '~/utils/misc';
 
 import { getReleasesCategories } from '../changelog/data';
 import { navigationMeta } from '../data';
@@ -58,7 +58,7 @@ export async function Sidebar() {
 							slug={section.slug}
 						>
 							<div className="mr-4 rounded-lg border-t border-gray-400/20 bg-gray-500 p-1">
-								<Icon weight="bold" className="h-4 w-4 text-white opacity-80" />
+								<Icon weight="bold" className="size-4 text-white opacity-80" />
 							</div>
 							{toTitleCase(section.slug)}
 						</SectionLink>

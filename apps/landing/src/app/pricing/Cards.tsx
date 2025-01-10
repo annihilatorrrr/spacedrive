@@ -15,10 +15,7 @@ export function Cards() {
 				<Switch checked={toggle} onCheckedChange={setToggle} size="lg" />
 				<p className="text-sm font-medium text-white">Yearly</p>
 			</div>
-			<div
-				className="fade-in-heading animation-delay-2 mx-auto mb-[200px] mt-[75px] flex
-				 w-full max-w-[1000px] flex-col items-center justify-center gap-10 px-2 md:flex-row"
-			>
+			<div className="fade-in-heading animation-delay-2 mx-auto mb-[200px] mt-[75px] flex w-full max-w-[1000px] flex-col items-center justify-center gap-10 px-2 md:flex-row">
 				<PackageCard
 					features={[
 						'lorem ipsum text',
@@ -90,10 +87,7 @@ const PackageCard = ({ features, name, price, toggle, subTitle }: Props) => {
 			)}
 		>
 			{name === 'Pro' && (
-				<div
-					className="pro-card-border-gradient popular-shadow absolute-horizontal-center top-[-12px]
-				 rounded-[6px] bg-[#0E0D1B] px-5 py-1"
-				>
+				<div className="pro-card-border-gradient popular-shadow absolute-horizontal-center top-[-12px] rounded-[6px] bg-[#0E0D1B] px-5 py-1">
 					<p className="text-[10px] font-medium uppercase text-white">Popular</p>
 				</div>
 			)}
@@ -103,14 +97,14 @@ const PackageCard = ({ features, name, price, toggle, subTitle }: Props) => {
 						<p className="text-md mb-4 uppercase text-[#A7ADD2]">{name}</p>
 						{price && (
 							<>
-								<p className="text-2xl font-bold leading-[1] text-white">
+								<p className="text-2xl font-bold leading-none text-white">
 									${toggle ? price.yearly : price.monthly}
 								</p>
 								<p className="text-md text-[#A7ADD2]">per {duration}</p>
 							</>
 						)}
 						{subTitle && (
-							<p className="text-2xl font-bold leading-[1] text-white">{subTitle}</p>
+							<p className="text-2xl font-bold leading-none text-white">{subTitle}</p>
 						)}
 					</div>
 				</div>
@@ -128,7 +122,7 @@ const PackageCard = ({ features, name, price, toggle, subTitle }: Props) => {
 						)}
 						{features.map((feature, index) => (
 							<div key={index} className="flex items-center justify-center gap-2.5">
-								<div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#353252] bg-[#2A2741]">
+								<div className="flex size-5 items-center justify-center rounded-full border border-[#353252] bg-[#2A2741]">
 									<Check weight="bold" size={12} color="white" />
 								</div>
 								<p className="text-sm text-white">{feature}</p>

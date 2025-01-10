@@ -1,28 +1,32 @@
 use crate::{
 	invalidate_query,
-	job::JobProgressEvent,
+	library::LibraryId,
 	node::{
-		config::{NodeConfig, NodePreferences, P2PDiscoveryState, Port},
-		get_hardware_model_name, HardwareModel,
+		config::{is_in_docker, NodeConfig, NodeConfigP2P, NodePreferences},
+		HardwareModel,
 	},
-	p2p::{into_listener2, Listener2},
+	old_job::JobProgressEvent,
 	Node,
 };
 
-use sd_cache::patch_typedef;
-use sd_p2p2::RemoteIdentity;
-use std::sync::{atomic::Ordering, Arc};
+use sd_core_heavy_lifting::media_processor::ThumbKey;
+use sd_core_sync::DevicePubId;
+
+use sd_cloud_schema::devices::DeviceOS;
+use sd_p2p::RemoteIdentity;
+use sd_prisma::prisma::file_path;
+
+use std::sync::Arc;
 
 use itertools::Itertools;
 use rspc::{alpha::Rspc, Config, ErrorCode};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use uuid::Uuid;
+use tracing::warn;
 
-mod auth;
 mod backups;
 mod cloud;
-// mod categories;
+mod devices;
 mod ephemeral_files;
 mod files;
 mod jobs;
@@ -42,6 +46,7 @@ pub mod utils;
 pub mod volumes;
 mod web_api;
 
+use libraries::KindStatistic;
 use utils::{InvalidRequests, InvalidateOperationEvent};
 
 #[allow(non_upper_case_globals)]
@@ -53,7 +58,13 @@ pub type Router = rspc::Router<Ctx>;
 /// Represents an internal core event, these are exposed to client via a rspc subscription.
 #[derive(Debug, Clone, Serialize, Type)]
 pub enum CoreEvent {
-	NewThumbnail { thumb_key: Vec<String> },
+	NewThumbnail {
+		thumb_key: ThumbKey,
+	},
+	NewIdentifiedObjects {
+		file_path_ids: Vec<file_path::id::Type>,
+	},
+	UpdatedKindStatistic(KindStatistic, LibraryId),
 	JobProgress(JobProgressEvent),
 	InvalidateOperation(InvalidateOperationEvent),
 }
@@ -63,52 +74,44 @@ pub enum CoreEvent {
 /// If you want a variant of this to show up on the frontend it must be added to `backendFeatures` in `useFeatureFlag.tsx`
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub enum BackendFeature {
-	FilesOverP2P,
-	CloudSync,
-}
+pub enum BackendFeature {}
 
-impl BackendFeature {
-	pub fn restore(&self, node: &Node) {
-		match self {
-			BackendFeature::FilesOverP2P => {
-				node.files_over_p2p_flag.store(true, Ordering::Relaxed);
-			}
-			BackendFeature::CloudSync => {
-				node.cloud_sync_flag.store(true, Ordering::Relaxed);
-			}
-		}
-	}
-}
+// impl BackendFeature {
+// 	pub fn restore(&self, node: &Node) {
+// 		match self {
+// 			BackendFeature::CloudSync => {
+// 				node.cloud_sync_flag.store(true, Ordering::Relaxed);
+// 			}
+// 		}
+// 	}
+// }
 
-// A version of [NodeConfig] that is safe to share with the frontend
+/// A version of [`NodeConfig`] that is safe to share with the frontend
 #[derive(Debug, Serialize, Deserialize, Clone, Type)]
-pub struct SanitisedNodeConfig {
+pub struct SanitizedNodeConfig {
 	/// id is a unique identifier for the current node. Each node has a public identifier (this one) and is given a local id for each library (done within the library code).
-	pub id: Uuid,
+	pub id: DevicePubId,
 	/// name is the display name of the current node. This is set by the user and is shown in the UI. // TODO: Length validation so it can fit in DNS record
 	pub name: String,
 	pub identity: RemoteIdentity,
-	pub p2p_ipv4_port: Port,
-	pub p2p_ipv6_port: Port,
-	pub p2p_discovery: P2PDiscoveryState,
+	pub p2p: NodeConfigP2P,
 	pub features: Vec<BackendFeature>,
 	pub preferences: NodePreferences,
-	pub image_labeler_version: Option<String>,
+	pub os: DeviceOS,
+	pub hardware_model: HardwareModel,
 }
 
-impl From<NodeConfig> for SanitisedNodeConfig {
+impl From<NodeConfig> for SanitizedNodeConfig {
 	fn from(value: NodeConfig) -> Self {
 		Self {
 			id: value.id,
 			name: value.name,
 			identity: value.identity.to_remote_identity(),
-			p2p_ipv4_port: value.p2p_ipv4_port,
-			p2p_ipv6_port: value.p2p_ipv6_port,
-			p2p_discovery: value.p2p_discovery,
+			p2p: value.p2p,
 			features: value.features,
 			preferences: value.preferences,
-			image_labeler_version: value.image_labeler_version,
+			os: value.os,
+			hardware_model: value.hardware_model,
 		}
 	}
 }
@@ -116,10 +119,10 @@ impl From<NodeConfig> for SanitisedNodeConfig {
 #[derive(Serialize, Debug, Type)]
 struct NodeState {
 	#[serde(flatten)]
-	config: SanitisedNodeConfig,
+	config: SanitizedNodeConfig,
 	data_path: String,
-	listeners: Vec<Listener2>,
 	device_model: Option<String>,
+	is_in_docker: bool,
 }
 
 pub(crate) fn mount() -> Arc<Router> {
@@ -141,12 +144,11 @@ pub(crate) fn mount() -> Arc<Router> {
 		})
 		.procedure("nodeState", {
 			R.query(|node, _: ()| async move {
-				let device_model = get_hardware_model_name()
-					.unwrap_or(HardwareModel::Other)
-					.to_string();
+				let config = SanitizedNodeConfig::from(node.config.get().await);
 
 				Ok(NodeState {
-					config: node.config.get().await.into(),
+					device_model: Some(config.hardware_model.to_string()),
+					config,
 					// We are taking the assumption here that this value is only used on the frontend for display purposes
 					data_path: node
 						.config
@@ -154,8 +156,7 @@ pub(crate) fn mount() -> Arc<Router> {
 						.to_str()
 						.expect("Found non-UTF-8 path")
 						.to_string(),
-					listeners: into_listener2(&node.p2p.p2p.listeners()),
-					device_model: Some(device_model),
+					is_in_docker: is_in_docker(),
 				})
 			})
 		})
@@ -178,16 +179,15 @@ pub(crate) fn mount() -> Arc<Router> {
 						.await
 						.map(|_| true)
 				}
-				.map_err(|err| rspc::Error::new(ErrorCode::InternalServerError, err.to_string()))?;
+				.map_err(|e| rspc::Error::new(ErrorCode::InternalServerError, e.to_string()))?;
 
-				match feature {
-					BackendFeature::FilesOverP2P => {
-						node.files_over_p2p_flag.store(enabled, Ordering::Relaxed);
-					}
-					BackendFeature::CloudSync => {
-						node.cloud_sync_flag.store(enabled, Ordering::Relaxed);
-					}
-				}
+				warn!("Feature {:?} is now {}", feature, enabled);
+
+				// match feature {
+				// 	BackendFeature::CloudSync => {
+				// 		node.cloud_sync_flag.store(enabled, Ordering::Relaxed);
+				// 	}
+				// }
 
 				invalidate_query!(node; node, "nodeState");
 
@@ -195,15 +195,13 @@ pub(crate) fn mount() -> Arc<Router> {
 			})
 		})
 		.merge("api.", web_api::mount())
-		.merge("auth.", auth::mount())
 		.merge("cloud.", cloud::mount())
+		.merge("devices.", devices::mount())
 		.merge("search.", search::mount())
 		.merge("library.", libraries::mount())
 		.merge("volumes.", volumes::mount())
 		.merge("tags.", tags::mount())
 		.merge("labels.", labels::mount())
-		// .merge("categories.", categories::mount())
-		// .merge("keys.", keys::mount())
 		.merge("locations.", locations::mount())
 		.merge("ephemeralFiles.", ephemeral_files::mount())
 		.merge("files.", files::mount())
@@ -215,16 +213,15 @@ pub(crate) fn mount() -> Arc<Router> {
 		.merge("preferences.", preferences::mount())
 		.merge("notifications.", notifications::mount())
 		.merge("backups.", backups::mount())
+		.merge("keys.", keys::mount())
 		.merge("invalidation.", utils::mount_invalidate())
 		.sd_patch_types_dangerously(|type_map| {
-			patch_typedef(type_map);
-
 			let def =
 				<sd_prisma::prisma::object::Data as specta::NamedType>::definition_named_data_type(
 					type_map,
 				);
 			type_map.insert(
-				<sd_prisma::prisma::object::Data as specta::NamedType>::SID,
+				<sd_prisma::prisma::object::Data as specta::NamedType>::sid(),
 				def,
 			);
 		});

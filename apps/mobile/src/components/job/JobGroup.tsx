@@ -1,7 +1,7 @@
 import { Folder } from '@sd/assets/icons';
 import dayjs from 'dayjs';
-import { DotsThreeVertical, Pause, Play, Stop } from 'phosphor-react-native';
-import { useMemo, useState } from 'react';
+import { DotsThreeVertical, Eye, Pause, Play, Stop, Trash } from 'phosphor-react-native';
+import { SetStateAction, useMemo, useState } from 'react';
 import { Animated, Pressable, View } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import {
@@ -9,15 +9,17 @@ import {
 	getTotalTasks,
 	JobGroup,
 	JobProgressEvent,
-	JobReport,
+	Report,
 	useLibraryMutation,
+	useRspcLibraryContext,
 	useTotalElapsedTimeText
 } from '@sd/client';
-import { tw } from '~/lib/tailwind';
+import { tw, twStyle } from '~/lib/tailwind';
 
 import { AnimatedHeight } from '../animation/layout';
 import { ProgressBar } from '../animation/ProgressBar';
 import { Button } from '../primitive/Button';
+import { Menu, MenuItem } from '../primitive/Menu';
 import { toast } from '../primitive/Toast';
 import Job from './Job';
 import JobContainer from './JobContainer';
@@ -58,11 +60,16 @@ export default function ({ group, progress }: JobGroupProps) {
 		return (
 			<Animated.View
 				style={[
-					tw`flex flex-row items-center pr-4`,
+					tw`mt-5 flex flex-row items-start pr-4`,
 					{ transform: [{ translateX: translate }] }
 				]}
 			>
-				<Options activeJob={runningJob} group={group} />
+				<Options
+					showChildJobs={showChildJobs}
+					setShowChildJobs={setShowChildJobs}
+					activeJob={runningJob}
+					group={group}
+				/>
 			</Animated.View>
 		);
 	};
@@ -124,14 +131,27 @@ export default function ({ group, progress }: JobGroupProps) {
 						</JobContainer>
 					</Pressable>
 					{showChildJobs && (
-						<AnimatedHeight style={tw`mb-4`}>
-							{jobs.map((job) => (
-								<Job
-									isChild={jobs.length > 1}
-									key={job.id}
-									job={job}
-									progress={progress[job.id] ?? null}
-								/>
+						<AnimatedHeight>
+							{jobs.map((job, i) => (
+								<View style={tw`relative`} key={job.id}>
+									<View
+										style={twStyle(
+											`left-7.5 absolute bottom-0 top-0.5 w-px bg-app-button`,
+											{
+												height: i === jobs.length - 1 ? 28 : '100%'
+											}
+										)}
+									/>
+									<View
+										style={tw`top-7.5 left-7.5 absolute h-px w-4 bg-app-button`}
+									/>
+									<Job
+										containerStyle={tw`ml-3.5`}
+										isChild={jobs.length > 1}
+										job={job}
+										progress={progress[job.id] ?? null}
+									/>
+								</View>
 							))}
 						</AnimatedHeight>
 					)}
@@ -150,25 +170,30 @@ const toastErrorSuccess = (
 ) => {
 	return {
 		onError: () => {
-			errorMessage &&
-				toast({
-					type: 'error',
-					text: errorMessage
-				});
+			if (errorMessage) toast.error(errorMessage);
 		},
 		onSuccess: () => {
-			successMessage &&
-				toast({
-					type: 'success',
-					text: successMessage
-				}),
-				successCallBack?.();
+			if (successMessage) toast.success(successMessage);
+			successCallBack?.();
 		}
 	};
 };
 
-function Options({ activeJob, group }: { activeJob?: JobReport; group: JobGroup }) {
-	// const queryClient = useQueryClient();
+interface OptionsProps {
+	activeJob?: Report;
+	group: JobGroup;
+	showChildJobs: boolean;
+	setShowChildJobs: React.Dispatch<SetStateAction<boolean>>;
+}
+
+function Options({ activeJob, group, setShowChildJobs, showChildJobs }: OptionsProps) {
+	const rspc = useRspcLibraryContext();
+
+	const clearJob = useLibraryMutation(['jobs.clear'], {
+		onSuccess: () => {
+			rspc.queryClient.invalidateQueries({ queryKey: ['jobs.reports'] });
+		}
+	});
 
 	const resumeJob = useLibraryMutation(
 		['jobs.resume'],
@@ -188,35 +213,80 @@ function Options({ activeJob, group }: { activeJob?: JobReport; group: JobGroup 
 		[group.jobs]
 	);
 
-	// const clearJob = useLibraryMutation(
-	// 	['jobs.clear'],
-	// 	toastErrorSuccess('failed_to_remove_job', undefined, () => {
-	// 		queryClient.invalidateQueries(['jobs.reports']);
-	// 	})
-	// );
+	const clearJobHandler = () => {
+		group.jobs.forEach((job) => {
+			clearJob.mutate(job.id);
+			//only one toast for all jobs
+			if (job.id === group.id) toast.success('Job has been removed');
+		});
+	};
 
 	return (
 		<>
 			{/* Resume */}
 			{(group.status === 'Queued' || group.status === 'Paused' || isJobPaused) && (
-				<Button variant="outline" size="sm" onPress={() => resumeJob.mutate(group.id)}>
-					<Play size={18} color="white" />
+				<Button
+					style={tw`h-7 w-7`}
+					variant="outline"
+					size="sm"
+					onPress={() =>
+						resumeJob.mutate(
+							group.running_job_id != null ? group.running_job_id : group.id
+						)
+					}
+				>
+					<Play size={16} color="white" />
 				</Button>
 			)}
 			{/* TODO: This should remove the job from panel */}
-			{!activeJob !== undefined ? (
-				<Button variant="outline" size="sm">
-					<DotsThreeVertical size={16} color="white" />
-				</Button>
-			) : (
+			{activeJob !== undefined ? (
 				<View style={tw`flex flex-row gap-2`}>
-					<Button variant="outline" size="sm" onPress={() => pauseJob.mutate(group.id)}>
+					<Button
+						style={tw`h-7 w-7`}
+						variant="outline"
+						size="sm"
+						onPress={() =>
+							pauseJob.mutate(
+								group.running_job_id != null ? group.running_job_id : group.id
+							)
+						}
+					>
 						<Pause size={16} color="white" />
 					</Button>
-					<Button variant="outline" size="sm" onPress={() => cancelJob.mutate(group.id)}>
+					<Button
+						style={tw`h-7 w-7`}
+						variant="outline"
+						size="sm"
+						onPress={() =>
+							cancelJob.mutate(
+								group.running_job_id != null ? group.running_job_id : group.id
+							)
+						}
+					>
 						<Stop size={16} color="white" />
 					</Button>
 				</View>
+			) : (
+				<Menu
+					containerStyle={tw`max-w-25`}
+					trigger={
+						<View
+							style={tw`flex h-7 w-7 flex-row items-center justify-center rounded-md border border-app-inputborder`}
+						>
+							<DotsThreeVertical size={16} color="white" />
+						</View>
+					}
+				>
+					<MenuItem
+						style={twStyle(
+							showChildJobs ? 'rounded bg-app-screen/50' : 'bg-transparent'
+						)}
+						onSelect={() => setShowChildJobs(!showChildJobs)}
+						text="Expand"
+						icon={Eye}
+					/>
+					<MenuItem onSelect={clearJobHandler} text="Remove" icon={Trash} />
+				</Menu>
 			)}
 		</>
 	);

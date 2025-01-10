@@ -45,7 +45,7 @@ export default ({ tag, onDelete }: Props) => {
 
 	return (
 		<Form form={form}>
-			<div className="mb-10 flex items-end justify-between ">
+			<div className="mb-10 flex items-end justify-between">
 				<div className="flex flex-row space-x-3">
 					<InputField
 						label={t('color')}
@@ -67,26 +67,26 @@ export default ({ tag, onDelete }: Props) => {
 					}
 				>
 					<Tooltip label={t('delete_tag')}>
-						<Trash className="h-4 w-4" />
+						<Trash className="size-4" />
 					</Tooltip>
 				</Button>
 			</div>
-			<div className="flex flex-col gap-2">
+			{/* <div className="flex flex-col gap-2">
 				<Setting
 					mini
 					title={t('hide_in_library_search')}
 					description={t('hide_in_library_search_description')}
 				>
-					<Switch />
+					<Switch disabled />
 				</Setting>
 				<Setting
 					mini
 					title={t('hide_in_sidebar')}
 					description={t('hide_in_sidebar_description')}
 				>
-					<Switch />
+					<Switch disabled />
 				</Setting>
-			</div>
+			</div> */}
 		</Form>
 	);
 };

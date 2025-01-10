@@ -1,30 +1,45 @@
-//! This is Spacedrive's `crypto` crate. It handles cryptographic operations
-//! such as key hashing, encryption/decryption, key management and much more.
-#![forbid(unsafe_code)]
-#![warn(clippy::pedantic)]
-#![warn(clippy::correctness)]
-#![warn(clippy::perf)]
-#![warn(clippy::style)]
-#![warn(clippy::suspicious)]
-#![warn(clippy::nursery)]
-#![warn(clippy::complexity)]
-#![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::missing_panics_doc)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::similar_names)]
+#![doc = include_str!("../README.md")]
+#![warn(
+	clippy::all,
+	clippy::pedantic,
+	clippy::correctness,
+	clippy::perf,
+	clippy::style,
+	clippy::suspicious,
+	clippy::complexity,
+	clippy::nursery,
+	clippy::unwrap_used,
+	unused_qualifications,
+	rust_2018_idioms,
+	trivial_casts,
+	trivial_numeric_casts,
+	unused_allocation,
+	clippy::as_conversions,
+	clippy::dbg_macro,
+	clippy::deprecated_cfg_attr,
+	clippy::separated_literal_suffix,
+	deprecated
+)]
+#![forbid(unsafe_code, deprecated_in_future)]
+#![allow(
+	clippy::missing_errors_doc,
+	clippy::module_name_repetitions,
+	clippy::similar_names
+)]
 
-pub mod crypto;
+// pub mod crypto;
+pub mod cloud;
+pub mod ct;
+pub mod erase;
 pub mod error;
-pub mod fs;
-pub mod header;
-pub mod keys;
 pub mod primitives;
 pub mod protected;
-pub mod types;
+pub mod rng;
 
-// Re-export so they can be used elsewhere/cleaner `use` declarations
-pub use self::error::{Error, Result};
-pub use aead::Payload;
+pub use error::Error;
 pub use protected::Protected;
-pub use zeroize::Zeroize;
+pub use rng::CryptoRng;
+
+pub use rand_core::{RngCore, SeedableRng};
+
+pub mod cookie;

@@ -1,29 +1,82 @@
-use crate::volume::get_volumes;
-
-use sd_cache::{Normalise, NormalisedResults};
-
+use super::{utils::library, Ctx, R};
+use crate::volume::{VolumeEvent, VolumeFingerprint};
 use rspc::alpha::AlphaRouter;
-
-use super::{Ctx, R};
+use serde::Deserialize;
+use specta::Type;
 
 pub(crate) fn mount() -> AlphaRouter<Ctx> {
-	R.router().procedure("list", {
-		R.query(|_, _: ()| async move {
-			let volumes = get_volumes().await;
+	R.router()
+		.procedure(
+			"list",
+			R.with2(library())
+				.query(|(node, library), _: ()| async move {
+					match node.volumes.list_system_volumes(library).await {
+						Ok(volumes) => Ok(volumes),
+						Err(e) => {
+							tracing::error!("Error listing volumes: {:?}", e);
+							Err(e.into())
+						}
+					}
+				}),
+		)
+		.procedure(
+			"track",
+			R.with2(library()).mutation(
+				|(node, library), fingerprint: VolumeFingerprint| async move {
+					tracing::debug!(
+						"Handling track volume request for volume_id={:?}",
+						fingerprint
+					);
 
-			let (nodes, items) = volumes.normalise(|i| {
-				// TODO: This is a really bad key. Once we hook up volumes with the DB fix this!
-				blake3::hash(
-					&i.mount_points
-						.iter()
-						.flat_map(|mp| mp.as_os_str().to_string_lossy().as_bytes().to_vec())
-						.collect::<Vec<u8>>(),
-				)
-				.to_hex()
-				.to_string()
-			});
+					node.volumes
+						.track_volume(fingerprint, library)
+						.await
+						.map_err(|e| {
+							tracing::error!("Failed to track volume: {:?}", e);
+							e.into()
+						})
+				},
+			),
+		)
+		.procedure(
+			"listForLibrary",
+			R.with2(library())
+				.query(|(node, library), _: ()| async move {
+					node.volumes
+						.list_library_volumes(library)
+						.await
+						.map_err(Into::into)
+				}),
+		)
+		// .procedure(
+		// 	"listByDevice",
+		// 	R.with2(library())
+		// 		.query(|(node, library), _: ()| async move {
+		// 			node.volumes
+		// 				.list_by_device(library)
+		// 				.await
+		// 				.map_err(Into::into)
+		// 		}),
+		// )
+		.procedure(
+			"unmount",
+			R.with2(library())
+				.mutation(|(node, _), fingerprint: Vec<u8>| async move {
+					node.volumes
+						.unmount_volume(VolumeFingerprint(fingerprint).into())
+						.await
+						.map_err(Into::into)
+				}),
+		)
+		.procedure("events", {
+			R.with2(library()).subscription(|(node, library), _: ()| {
+				Ok(async_stream::stream! {
+						let mut event_bus_rx = node.volumes.subscribe();
 
-			Ok(NormalisedResults { nodes, items })
+						while let Ok(event) = event_bus_rx.recv().await {
+							yield event;
+						}
+				})
+			})
 		})
-	})
 }

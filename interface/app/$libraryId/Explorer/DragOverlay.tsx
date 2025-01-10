@@ -1,5 +1,4 @@
-import type { ClientRect, Modifier } from '@dnd-kit/core';
-import { DragOverlay as DragOverlayPrimitive } from '@dnd-kit/core';
+import { DragOverlay as DragOverlayPrimitive, type ClientRect, type Modifier } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
 import clsx from 'clsx';
 import { memo, useEffect, useRef } from 'react';
@@ -83,7 +82,7 @@ export const DragOverlay = memo(() => {
 								size={32}
 								frame
 								frameClassName={clsx(
-									'!border-[1px] shadow-md',
+									'!border-DEFAULT shadow-md',
 									isDark ? 'shadow-app-shade/50' : 'shadow-app-shade/25'
 								)}
 							/>

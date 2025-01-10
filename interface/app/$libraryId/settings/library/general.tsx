@@ -1,4 +1,10 @@
-import { MaybeUndefined, useBridgeMutation, useLibraryContext, useZodForm } from '@sd/client';
+import {
+	MaybeUndefined,
+	useBridgeMutation,
+	useLibraryContext,
+	useLibraryMutation,
+	useZodForm
+} from '@sd/client';
 import { Button, dialogManager, Form, InputField, Switch, Tooltip, z } from '@sd/ui';
 import { useDebouncedFormWatch, useLocale } from '~/hooks';
 
@@ -20,6 +26,7 @@ function toMaybeUndefined<T>(v: T | null | undefined): MaybeUndefined<T> {
 export const Component = () => {
 	const { library } = useLibraryContext();
 	const editLibrary = useBridgeMutation('library.edit');
+	const vacuumLibrary = useLibraryMutation('library.vacuumDb');
 
 	const { t } = useLocale();
 
@@ -87,10 +94,28 @@ export const Component = () => {
 				>
 					<div className="mt-2">
 						<Tooltip label={t('export_library_coming_soon')}>
-							<Button disabled size="sm" variant="gray">
+							<Button disabled size="sm" variant="gray" className="whitespace-nowrap">
 								{t('export')}
 							</Button>
 						</Tooltip>
+					</div>
+				</Setting>
+
+				<Setting
+					mini
+					title={t('vacuum_library')}
+					description={t('vacuum_library_description')}
+				>
+					<div className="mt-2">
+						<Button
+							onClick={() => vacuumLibrary.mutate(null)}
+							disabled={vacuumLibrary.isPending}
+							size="sm"
+							variant="gray"
+							className="whitespace-nowrap"
+						>
+							{t('vacuum')}
+						</Button>
 					</div>
 				</Setting>
 
@@ -103,7 +128,7 @@ export const Component = () => {
 						<Button
 							size="sm"
 							variant="colored"
-							className="border-red-500 bg-red-500"
+							className="whitespace-nowrap border-red-500 bg-red-500"
 							onClick={() => {
 								dialogManager.create((dp) => (
 									<DeleteLibraryDialog {...dp} libraryUuid={library.uuid} />

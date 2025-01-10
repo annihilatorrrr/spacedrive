@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{api::utils::library, invalidate_query, library::Library};
 
 use sd_prisma::{prisma::saved_search, prisma_sync};
@@ -6,21 +8,52 @@ use sd_utils::chain_optional_iter;
 
 use chrono::{DateTime, FixedOffset, Utc};
 use rspc::alpha::AlphaRouter;
-use serde::{de::IgnoredAny, Deserialize, Serialize};
+use serde::{de::IgnoredAny, Deserialize};
 use specta::Type;
 use tracing::error;
 use uuid::Uuid;
 
 use super::{Ctx, R};
 
+#[derive(Type, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+enum SearchTarget {
+	#[default]
+	Paths,
+	Objects,
+}
+
+impl std::fmt::Display for SearchTarget {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			SearchTarget::Paths => write!(f, "paths"),
+			SearchTarget::Objects => write!(f, "objects"),
+		}
+	}
+}
+
+impl FromStr for SearchTarget {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"paths" => Ok(SearchTarget::Paths),
+			"objects" => Ok(SearchTarget::Objects),
+			_ => Err(format!("invalid search target: {s}")),
+		}
+	}
+}
+
 pub(crate) fn mount() -> AlphaRouter<Ctx> {
 	R.router()
 		.procedure("create", {
 			R.with2(library()).mutation({
-				#[derive(Serialize, Type, Deserialize, Clone, Debug)]
+				#[derive(Type, Deserialize, Clone, Debug)]
 				#[specta(inline)]
 				pub struct Args {
 					pub name: String,
+					#[serde(default)]
+					pub target: SearchTarget,
 					#[specta(optional)]
 					pub search: Option<String>,
 					#[specta(optional)]
@@ -33,13 +66,14 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 
 				|(_, library), args: Args| async move {
 					let Library { db, sync, .. } = library.as_ref();
-					let pub_id = Uuid::new_v4().as_bytes().to_vec();
+					let pub_id = Uuid::now_v7().as_bytes().to_vec();
 					let date_created: DateTime<FixedOffset> = Utc::now().into();
 
-					let (sync_params, db_params): (Vec<_>, Vec<_>) = chain_optional_iter(
+					let (sync_params, db_params) = chain_optional_iter(
 						[
 							sync_db_entry!(date_created, saved_search::date_created),
 							sync_db_entry!(args.name, saved_search::name),
+							sync_db_entry!(args.target.to_string(), saved_search::target),
 						],
 						[
 							option_sync_db_entry!(
@@ -48,7 +82,7 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 									// https://docs.rs/serde/latest/serde/de/struct.IgnoredAny.html
 
 									if let Err(e) = serde_json::from_str::<IgnoredAny>(&s) {
-										error!("failed to parse filters: {e:#?}");
+										error!(?e, "Failed to parse filters;");
 										None
 									} else {
 										Some(s)
@@ -62,19 +96,19 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 						],
 					)
 					.into_iter()
-					.unzip();
+					.unzip::<_, _, Vec<_>, Vec<_>>();
 
-					sync.write_ops(
+					sync.write_op(
 						db,
-						(
-							sync.shared_create(
-								prisma_sync::saved_search::SyncId {
-									pub_id: pub_id.clone(),
-								},
-								sync_params,
-							),
-							db.saved_search().create(pub_id, db_params),
+						sync.shared_create(
+							prisma_sync::saved_search::SyncId {
+								pub_id: pub_id.clone(),
+							},
+							sync_params,
 						),
+						db.saved_search()
+							.create(pub_id, db_params)
+							.select(saved_search::select!({ id })),
 					)
 					.await?;
 
@@ -118,7 +152,7 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 
 				|(_, library), (id, args): (saved_search::id::Type, Args)| async move {
 					let Library { db, sync, .. } = library.as_ref();
-					let updated_at = Utc::now().into();
+					let updated_at = Utc::now();
 
 					let search = db
 						.saved_search()
@@ -130,7 +164,7 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 							rspc::Error::new(rspc::ErrorCode::NotFound, "search not found".into())
 						})?;
 
-					let (sync_params, db_params): (Vec<_>, Vec<_>) = chain_optional_iter(
+					let (sync_params, db_params) = chain_optional_iter(
 						[sync_db_entry!(updated_at, saved_search::date_modified)],
 						[
 							option_sync_db_entry!(args.name.flatten(), saved_search::name),
@@ -141,27 +175,18 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 						],
 					)
 					.into_iter()
-					.map(|((k, v), p)| {
-						(
-							sync.shared_update(
-								prisma_sync::saved_search::SyncId {
-									pub_id: search.pub_id.clone(),
-								},
-								k,
-								v,
-							),
-							p,
-						)
-					})
-					.unzip();
+					.unzip::<_, _, Vec<_>, Vec<_>>();
 
-					sync.write_ops(
+					sync.write_op(
 						db,
-						(
+						sync.shared_update(
+							prisma_sync::saved_search::SyncId {
+								pub_id: search.pub_id.clone(),
+							},
 							sync_params,
-							db.saved_search()
-								.update_unchecked(saved_search::id::equals(id), db_params),
 						),
+						db.saved_search()
+							.update_unchecked(saved_search::id::equals(id), db_params),
 					)
 					.await?;
 

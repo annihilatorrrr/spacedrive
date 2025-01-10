@@ -2,7 +2,7 @@ import { allPosts } from '@contentlayer/generated';
 import dayjs from 'dayjs';
 import Image from 'next/image';
 import Link from 'next/link';
-import { BlogTag } from '~/components/BlogTag';
+import { BlogTag } from '~/components/blog-tag';
 
 export const metadata = {
 	title: 'Spacedrive Blog',
@@ -11,7 +11,7 @@ export const metadata = {
 
 export default function Page() {
 	return (
-		<div className="lg:prose-xs container prose m-auto mb-20 flex max-w-4xl flex-col p-4 pt-32 dark:prose-invert prose-a:no-underline">
+		<div className="lg:prose-xs container prose prose-invert m-auto mb-20 flex max-w-4xl flex-col p-4 pt-32 prose-a:no-underline">
 			<section>
 				<h1 className="fade-in-heading m-0">Blog</h1>
 				<p className="fade-in-heading animation-delay-1">Get the latest from Spacedrive.</p>
@@ -27,10 +27,10 @@ export default function Page() {
 							<Image
 								src={post.image}
 								alt={post.imageAlt ?? ''}
-								className="inset-0 -z-10 m-0 w-full rounded-t-xl object-cover md:h-96"
+								className="inset-0 -z-10 m-0 w-full rounded-t-xl object-cover"
 								// NOTE: Ideally we need to follow this specific ratio for our blog images
 								height={400}
-								width={800}
+								width={900}
 							/>
 						)}
 						<div className="p-8">

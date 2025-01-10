@@ -1,18 +1,19 @@
 import { FolderNotchOpen } from '@phosphor-icons/react';
-import { CSSProperties, type PropsWithChildren, type ReactNode } from 'react';
+import { CSSProperties, useEffect, type PropsWithChildren, type ReactNode } from 'react';
 import {
 	explorerLayout,
 	useExplorerLayoutStore,
 	useLibrarySubscription,
+	useRspcLibraryContext,
 	useSelector
 } from '@sd/client';
-import { useShortcut } from '~/hooks';
+import { useOperatingSystem, useShortcut } from '~/hooks';
 
-import { useTopBarContext } from '../TopBar/Layout';
+import { useTopBarContext } from '../TopBar/Context';
 import { useExplorerContext } from './Context';
 import ContextMenu from './ContextMenu';
 import DismissibleNotice from './DismissibleNotice';
-import { ExplorerPath, PATH_BAR_HEIGHT } from './ExplorerPath';
+import { ExplorerPathBar, PATH_BAR_HEIGHT } from './ExplorerPathBar';
 import { Inspector, INSPECTOR_WIDTH } from './Inspector';
 import ExplorerContextMenu from './ParentContextMenu';
 import { getQuickPreviewStore } from './QuickPreview/store';
@@ -23,6 +24,9 @@ import { EmptyNotice } from './View/EmptyNotice';
 
 import 'react-slidedown/lib/slidedown.css';
 
+import clsx from 'clsx';
+
+import { ExplorerTagBar, TAG_BAR_HEIGHT } from './ExplorerTagBar';
 import { useExplorerDnd } from './useExplorerDnd';
 
 interface Props {
@@ -30,6 +34,11 @@ interface Props {
 	contextMenu?: () => ReactNode;
 }
 
+declare global {
+	interface Window {
+		useDragAndDrop: () => void;
+	}
+}
 /**
  * This component is used in a few routes and acts as the reference demonstration of how to combine
  * all the elements of the explorer except for the context, which must be used in the parent component.
@@ -37,20 +46,28 @@ interface Props {
 export default function Explorer(props: PropsWithChildren<Props>) {
 	const explorer = useExplorerContext();
 	const layoutStore = useExplorerLayoutStore();
-	const showInspector = useSelector(explorerStore, (s) => s.showInspector);
+	const [showInspector, showTagBar] = useSelector(explorerStore, (s) => [
+		s.showInspector,
+		s.isTagAssignModeActive
+	]);
+	const isWindows = useOperatingSystem() === 'windows';
 
 	const showPathBar = explorer.showPathBar && layoutStore.showPathBar;
-
+	const rspc = useRspcLibraryContext();
 	// Can we put this somewhere else -_-
 	useLibrarySubscription(['jobs.newThumbnail'], {
-		onStarted: () => {
-			console.log('Started RSPC subscription new thumbnail');
-		},
-		onError: (err) => {
-			console.error('Error in RSPC subscription new thumbnail', err);
-		},
 		onData: (thumbKey) => {
 			explorerStore.addNewThumbnail(thumbKey);
+		}
+	});
+	useLibrarySubscription(['jobs.newFilePathIdentified'], {
+		onData: (ids) => {
+			if (ids?.length > 0) {
+				// I had planned to somehow fetch the Object, but its a lot more work than its worth given
+				// id have to fetch the file_path explicitly and patch the query
+				// for now, it seems to work a treat just invalidating the whole query
+				rspc.queryClient.invalidateQueries({ queryKey: ['search.paths'] });
+			}
 		}
 	});
 
@@ -81,11 +98,13 @@ export default function Explorer(props: PropsWithChildren<Props>) {
 			<ExplorerContextMenu>
 				<div
 					ref={explorer.scrollRef}
-					className="custom-scroll explorer-scroll flex flex-1 flex-col overflow-x-hidden"
+					className="explorer-scroll explorer-inspector-scroll flex flex-1 flex-col overflow-x-hidden"
 					style={
 						{
+							'--scrollbar-width': isWindows ? '10px' : '6px',
+							'--scrollbar-height': isWindows ? '10px' : '6px',
 							'--scrollbar-margin-top': `${topBar.topBarHeight}px`,
-							'--scrollbar-margin-bottom': `${showPathBar ? PATH_BAR_HEIGHT : 0}px`,
+							'--scrollbar-margin-bottom': `${showPathBar ? PATH_BAR_HEIGHT + (showTagBar ? TAG_BAR_HEIGHT : 0) : 0}px`,
 							'paddingTop': topBar.topBarHeight,
 							'paddingRight': showInspector ? INSPECTOR_WIDTH : 0
 						} as CSSProperties
@@ -106,20 +125,31 @@ export default function Explorer(props: PropsWithChildren<Props>) {
 						listViewOptions={{ hideHeaderBorder: true }}
 						scrollPadding={{
 							top: topBar.topBarHeight,
-							bottom: showPathBar ? PATH_BAR_HEIGHT : undefined
+							bottom: showPathBar
+								? PATH_BAR_HEIGHT + (showTagBar ? TAG_BAR_HEIGHT : 0)
+								: undefined
 						}}
 					/>
 				</div>
 			</ExplorerContextMenu>
 
-			{showPathBar && <ExplorerPath />}
+			{/* TODO: wrap path bar and tag bar in nice wrapper, ideally animate tag bar in/out directly above path bar */}
+			<div className="absolute inset-x-0 bottom-0 z-50 flex flex-col">
+				{showTagBar && <ExplorerTagBar />}
+				{showPathBar && <ExplorerPathBar />}
+			</div>
 
 			{showInspector && (
 				<Inspector
-					className="no-scrollbar absolute right-1.5 top-0 pb-3 pl-3 pr-1.5"
+					className={clsx(
+						'no-scrollbar absolute top-0 pb-3 pl-3 pr-1.5',
+						isWindows ? 'right-3' : 'right-1.5'
+					)}
 					style={{
 						paddingTop: topBar.topBarHeight + 12,
-						bottom: showPathBar ? PATH_BAR_HEIGHT : 0
+						bottom: showPathBar
+							? PATH_BAR_HEIGHT + (showTagBar ? TAG_BAR_HEIGHT : 0)
+							: 0
 					}}
 				/>
 			)}

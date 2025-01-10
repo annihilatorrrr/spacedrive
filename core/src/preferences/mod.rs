@@ -38,7 +38,7 @@ where
 			.into_iter()
 			.filter_map(|(key, entry)| {
 				Uuid::parse_str(&key)
-					.map_err(|e| error!("{e:#?}"))
+					.map_err(|e| error!(?e))
 					.ok()
 					.map(|uuid| (uuid, entry.expect_value()))
 			})
@@ -48,7 +48,7 @@ where
 
 // Preferences are a set of types that are serialized as a list of key-value pairs,
 // where nested type keys are serialized as a dot-separated path.
-// They are serailized as a list because this allows preferences to be a synchronisation boundary,
+// They are serialized as a list because this allows preferences to be a synchronization boundary,
 // whereas their values (referred to as settings) will be overwritten.
 pub trait Preferences {
 	fn to_kvs(self) -> PreferenceKVs;

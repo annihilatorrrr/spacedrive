@@ -1,11 +1,14 @@
+import { Cards, IconWeight, Minus, Square, X } from '@phosphor-icons/react';
+import { Window } from '@tauri-apps/api/window';
 import clsx from 'clsx';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { ModifierKeys, Popover, Tooltip, usePopover } from '@sd/ui';
 import { useIsDark, useOperatingSystem } from '~/hooks';
 
 import TopBarButton from './TopBarButton';
 import TopBarMobile from './TopBarMobile';
 
+const appWindow = new Window('main');
 export interface ToolOption {
 	icon: JSX.Element | ((props: { triggerOpen: () => void }) => JSX.Element);
 	onClick?: () => void;
@@ -15,7 +18,7 @@ export interface ToolOption {
 	topBarActive?: boolean;
 	popOverComponent?: JSX.Element | ((props: { triggerClose: () => void }) => JSX.Element);
 	showAtResolution: ShowAtResolution;
-	keybinds?: Array<String | ModifierKeys>;
+	keybinds?: Array<string | ModifierKeys>;
 }
 
 export type ShowAtResolution = 'sm:flex' | 'md:flex' | 'lg:flex' | 'xl:flex' | '2xl:flex';
@@ -23,7 +26,14 @@ interface TopBarChildrenProps {
 	options?: ToolOption[][];
 }
 
-export const TOP_BAR_ICON_STYLE = 'm-0.5 w-[18px] h-[18px] text-ink-dull';
+export const TOP_BAR_ICON_CLASSLIST = 'm-0.5 text-ink-dull';
+export const TOP_BAR_ICON_WEIGHT: IconWeight = 'regular';
+export const TOP_BAR_ICON_SIZE = 18;
+export const TOP_BAR_ICON_DEFAULT_PROPS = {
+	weight: TOP_BAR_ICON_WEIGHT,
+	size: TOP_BAR_ICON_SIZE,
+	className: TOP_BAR_ICON_CLASSLIST
+};
 
 export default ({ options }: TopBarChildrenProps) => {
 	const [windowSize, setWindowSize] = useState(0);
@@ -63,6 +73,7 @@ export default ({ options }: TopBarChildrenProps) => {
 					windowSize <= 1279 && (toolsNotSmFlex?.length as number) > 0 ? 'flex' : 'hidden'
 				}
 			/>
+			{os === 'windows' && <WindowsControls windowSize={windowSize} />}
 		</div>
 	);
 };
@@ -96,10 +107,10 @@ function ToolGroup({
 	const roundingCondition = individual
 		? 'both'
 		: index === 0
-		? 'left'
-		: index === group.length - 1
-		? 'right'
-		: 'none';
+			? 'left'
+			: index === group.length - 1
+				? 'right'
+				: 'none';
 
 	const popover = usePopover();
 	const os = useOperatingSystem();
@@ -130,7 +141,7 @@ function ToolGroup({
 									{typeof icon === 'function'
 										? icon({
 												triggerOpen: () => popover.setOpen(true)
-										  })
+											})
 										: icon}
 								</Tooltip>
 							</TopBarButton>
@@ -167,6 +178,55 @@ function ToolGroup({
 					)}
 				/>
 			)}
+		</div>
+	);
+}
+
+export function WindowsControls({ windowSize }: { windowSize: number }) {
+	const [maximized, setMaximized] = useState(false);
+	const getWindowState = useCallback(async () => {
+		const isMaximized = await Window.getCurrent().isMaximized();
+		setMaximized(isMaximized);
+	}, []);
+
+	useEffect(() => {
+		getWindowState().catch(console.error);
+	}, [getWindowState, windowSize]);
+	return (
+		<div className="mx-1 ml-4 flex items-center">
+			<TopBarButton
+				className="mx-2"
+				rounding="both"
+				active={false}
+				onClick={() => appWindow.minimize()}
+			>
+				<Minus {...TOP_BAR_ICON_DEFAULT_PROPS} />
+			</TopBarButton>
+			<TopBarButton
+				rounding="both"
+				className="mx-2"
+				active={false}
+				onClick={() => {
+					appWindow.toggleMaximize();
+				}}
+			>
+				{maximized ? (
+					<Cards {...TOP_BAR_ICON_DEFAULT_PROPS} />
+				) : (
+					<Square {...TOP_BAR_ICON_DEFAULT_PROPS} />
+				)}
+			</TopBarButton>
+			<TopBarButton
+				rounding="both"
+				className="mx-2 hover:bg-red-500 *:hover:text-white"
+				active={false}
+				onClick={() => appWindow.close()}
+			>
+				<X
+					{...TOP_BAR_ICON_DEFAULT_PROPS}
+					className={clsx(TOP_BAR_ICON_CLASSLIST, 'hover:text-white')}
+				/>
+			</TopBarButton>
 		</div>
 	);
 }

@@ -1,86 +1,47 @@
 //! This module contains all possible errors that this crate can return.
 
-use std::string::FromUtf8Error;
-
-use thiserror::Error;
-
-#[cfg(feature = "rspc")]
-impl From<Error> for rspc::Error {
-	fn from(err: Error) -> Self {
-		Self::new(rspc::ErrorCode::InternalServerError, err.to_string())
-	}
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+use tokio::io;
 
 /// This enum defines all possible errors that this crate can give
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
-	// crypto primitive errors (STREAM, hashing)
-	#[error("there was an error while password hashing")]
-	PasswordHash,
-	#[error("error while encrypting")]
+	#[error("Block too big for oneshot encryption: size in bytes = {0}")]
+	BlockTooBig(usize),
+	#[error("Invalid key size: expected 32 bytes, got {0}")]
+	InvalidKeySize(usize),
+
+	/// Encrypt and decrypt errors, AEAD crate doesn't provide any error context for these
+	/// as it can be a security hazard to leak information about the error.
+	#[error("Encryption error")]
 	Encrypt,
-	#[error("error while decrypting")]
+	#[error("Decryption error")]
 	Decrypt,
-	#[error("nonce length mismatch")]
-	NonceLengthMismatch,
-	#[error("error initialising stream encryption/decryption")]
-	StreamModeInit,
 
-	// header errors
-	#[error("no keyslots available")]
-	NoKeyslots,
-	#[error("no preview media found")]
-	NoPreviewMedia,
-	#[error("no metadata found")]
-	NoMetadata,
-	#[error("tried adding too many keyslots to a header")]
-	TooManyKeyslots,
+	/// I/O error while encrypting
+	#[error("I/O error while encrypting: {{context: {context}, source: {source}}}")]
+	EncryptIo {
+		context: &'static str,
+		#[source]
+		source: io::Error,
+	},
+	#[error("I/O error while decrypting: {{context: {context}, source: {source}}}")]
+	DecryptIo {
+		context: &'static str,
+		#[source]
+		source: io::Error,
+	},
 
-	// key manager
-	#[error("requested key wasn't found in the key manager")]
-	KeyNotFound,
-	#[error("key is already mounted")]
-	KeyAlreadyMounted,
-	#[error("key not mounted")]
-	KeyNotMounted,
-	#[error("key isn't in the queue")]
-	KeyNotQueued,
-	#[error("key is already in the queue")]
-	KeyAlreadyQueued,
-	#[error("no default key has been set")]
-	NoDefaultKeySet,
-	#[error("keymanager is not unlocked")]
-	NotUnlocked,
-	#[error("no verification key")]
-	NoVerificationKey,
-	#[error("key isn't flagged as memory only")]
-	KeyNotMemoryOnly,
+	/// I/O error while erasing a file
+	#[error("I/O error while erasing: {{context: {context}, source: {source}}}")]
+	EraseIo {
+		context: &'static str,
+		#[source]
+		source: io::Error,
+	},
 
-	// general errors
-	#[error("I/O error: {0}")]
-	Io(#[from] std::io::Error),
-	#[error("mismatched data length while converting vec to array")]
-	VecArrSizeMismatch,
-	#[error("incorrect password/details were provided")]
-	IncorrectPassword,
-	#[error("error while serializing/deserializing an item")]
-	Serialization,
-	#[error("string parse error")]
-	StringParse(#[from] FromUtf8Error),
+	#[error("hex error: {0}")]
+	Hex(#[from] hex::FromHexError),
 
-	// keyring
-	#[cfg(all(target_os = "linux", feature = "os-keyrings"))]
-	#[error("error with the linux keyring: {0}")]
-	LinuxKeyringError(#[from] secret_service::Error),
-	#[cfg(all(any(target_os = "macos", target_os = "ios"), feature = "os-keyrings"))]
-	#[error("error with the apple keyring: {0}")]
-	AppleKeyringError(#[from] security_framework::base::Error),
-	#[cfg(feature = "os-keyrings")]
-	#[error("generic keyring error")]
-	KeyringError,
-	#[cfg(feature = "os-keyrings")]
-	#[error("keyring not available on this platform")]
-	KeyringNotSupported,
+	#[error("Entropy source error: {0}")]
+	EntropySource(#[from] rand_core::getrandom::Error),
 }

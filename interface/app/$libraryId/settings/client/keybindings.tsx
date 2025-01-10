@@ -24,10 +24,14 @@ export const Component = () => {
 				name: t('general'),
 				description: t('general_shortcut_description'),
 				shortcuts: [
+					{ shortcut: 'toggleCommandPalette', description: t('toggle_command_palette') },
+					{ shortcut: 'closeCommandPalette', description: t('close_command_palette') },
 					{ shortcut: 'newTab', description: t('open_new_tab') },
 					{ shortcut: 'closeTab', description: t('close_current_tab') },
 					{ shortcut: 'newTab', description: t('switch_to_next_tab') },
-					{ shortcut: 'previousTab', description: t('switch_to_previous_tab') }
+					{ shortcut: 'previousTab', description: t('switch_to_previous_tab') },
+					{ shortcut: 'toggleSidebar', description: t('toggle_sidebar') },
+					{ shortcut: 'duplicateTab', description: t('duplicate_current_tab') }
 				]
 			},
 			{
@@ -40,8 +44,8 @@ export const Component = () => {
 				description: t('page_shortcut_description'),
 				shortcuts: [
 					{ shortcut: 'navBackwardHistory', description: t('navigate_backwards') },
-					{ shortcut: 'navForwardHistory', description: t('navigate_forwards') },
-					{ shortcut: 'navToSettings', description: t('navigate_to_settings_page') }
+					{ shortcut: 'navForwardHistory', description: t('navigate_forwards') }
+					// { shortcut: 'navToSettings', description: t('navigate_to_settings_page') }
 				]
 			},
 			{
@@ -171,7 +175,7 @@ function KeybindTable({ data }: { data: ShortcutCategory['shortcuts'] }) {
 
 					return symbols.map((symbol) => (
 						<div key={symbol} className="inline-flex items-center">
-							<kbd className="ml-2 rounded-lg border border-app-line bg-app-box px-2 py-1 text-[10.5px] tracking-widest shadow">
+							<kbd className="ml-2 rounded-lg border border-app-line bg-app-box px-1.5 py-0.5 text-sm tracking-widest shadow">
 								{symbol}
 							</kbd>
 						</div>

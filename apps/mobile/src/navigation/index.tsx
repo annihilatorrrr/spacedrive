@@ -1,43 +1,44 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
-import { createStackNavigator, StackScreenProps } from '@react-navigation/stack';
+import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import NotFoundScreen from '~/screens/NotFound';
-import SearchScreen from '~/screens/Search';
 
-import TabNavigator, { TabParamList } from './TabNavigator';
+import BackfillWaitingStack, { BackfillWaitingStackParamList } from './BackfillWaitingStack';
+import DrawerNavigator, { DrawerNavParamList } from './DrawerNavigator';
+import SearchStack, { SearchStackParamList } from './SearchStack';
 
-const Stack = createStackNavigator<RootStackParamList>();
-
+const Stack = createNativeStackNavigator<RootStackParamList>();
 // This is the main navigator we nest everything under.
 export default function RootNavigator() {
 	return (
 		<Stack.Navigator initialRouteName="Root">
-			<Stack.Screen name="Root" component={TabNavigator} options={{ headerShown: false }} />
-			<Stack.Screen name="NotFound" component={NotFoundScreen} options={{ title: 'Oops!' }} />
 			<Stack.Screen
-				name="Search"
-				component={SearchScreen}
-				options={{ headerShown: false, animationEnabled: false }}
+				name="Root"
+				component={DrawerNavigator}
+				options={{ headerShown: false }}
 			/>
+			<Stack.Screen
+				name="SearchStack"
+				component={SearchStack}
+				options={{ headerShown: false }}
+			/>
+			<Stack.Screen
+				name="BackfillWaitingStack"
+				component={BackfillWaitingStack}
+				options={{ headerShown: false }}
+			/>
+			<Stack.Screen name="NotFound" component={NotFoundScreen} options={{ title: 'Oops!' }} />
 		</Stack.Navigator>
 	);
 }
 
 export type RootStackParamList = {
-	Root: NavigatorScreenParams<TabParamList>;
+	Root: NavigatorScreenParams<DrawerNavParamList>;
+	SearchStack: NavigatorScreenParams<SearchStackParamList>;
+	BackfillWaitingStack: NavigatorScreenParams<BackfillWaitingStackParamList>;
 	NotFound: undefined;
-	// Modals
-	Search: undefined;
 };
 
-export type RootStackScreenProps<Screen extends keyof RootStackParamList> = StackScreenProps<
+export type RootStackScreenProps<Screen extends keyof RootStackParamList> = NativeStackScreenProps<
 	RootStackParamList,
 	Screen
 >;
-
-// This declaration is used by useNavigation, Link, ref etc.
-declare global {
-	// eslint-disable-next-line @typescript-eslint/no-namespace
-	namespace ReactNavigation {
-		interface RootParamList extends RootStackParamList {}
-	}
-}

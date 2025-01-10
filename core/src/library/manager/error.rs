@@ -1,18 +1,17 @@
-use crate::{
-	library::LibraryConfigError,
-	location::{indexer, LocationManagerError},
-};
+use crate::{library::LibraryConfigError, location::LocationManagerError};
 
-use sd_p2p2::IdentityOrRemoteIdentityErr;
+use sd_core_indexer_rules::seed::SeederError;
+use sd_core_sync::DevicePubId;
+
+use sd_p2p::IdentityErr;
 use sd_utils::{
 	db::{self, MissingFieldError},
 	error::{FileIOError, NonUtf8PathError},
 };
 
-use thiserror::Error;
 use tracing::error;
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum LibraryManagerError {
 	#[error("error serializing or deserializing the JSON in the config file: {0}")]
 	Json(#[from] serde_json::Error),
@@ -23,9 +22,7 @@ pub enum LibraryManagerError {
 	#[error("failed to parse uuid: {0}")]
 	Uuid(#[from] uuid::Error),
 	#[error("failed to run indexer rules seeder: {0}")]
-	IndexerRulesSeeder(#[from] indexer::rules::seed::SeederError),
-	// #[error("failed to initialise the key manager: {0}")]
-	// KeyManager(#[from] sd_crypto::Error),
+	IndexerRulesSeeder(#[from] SeederError),
 	#[error("error migrating the library: {0}")]
 	MigrationError(#[from] db::MigrationError),
 	#[error("invalid library configuration: {0}")]
@@ -35,11 +32,13 @@ pub enum LibraryManagerError {
 	#[error("failed to watch locations: {0}")]
 	LocationWatcher(#[from] LocationManagerError),
 	#[error("failed to parse library p2p identity: {0}")]
-	Identity(#[from] IdentityOrRemoteIdentityErr),
+	Identity(#[from] IdentityErr),
 	#[error("failed to load private key for instance p2p identity")]
 	InvalidIdentity,
 	#[error("current instance with id '{0}' was not found in the database")]
 	CurrentInstanceNotFound(String),
+	#[error("current device with pub id '{0}' was not found in the database")]
+	CurrentDeviceNotFound(DevicePubId),
 	#[error("missing-field: {0}")]
 	MissingField(#[from] MissingFieldError),
 
@@ -47,6 +46,10 @@ pub enum LibraryManagerError {
 	FileIO(#[from] FileIOError),
 	#[error(transparent)]
 	LibraryConfig(#[from] LibraryConfigError),
+	#[error(transparent)]
+	CloudServices(#[from] sd_core_cloud_services::Error),
+	#[error(transparent)]
+	Sync(#[from] sd_core_sync::Error),
 }
 
 impl From<LibraryManagerError> for rspc::Error {

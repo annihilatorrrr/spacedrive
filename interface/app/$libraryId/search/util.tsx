@@ -1,30 +1,8 @@
 import { CircleDashed, Folder, Icon, Tag } from '@phosphor-icons/react';
 import { IconTypes } from '@sd/assets/util';
 import clsx from 'clsx';
+import i18n from '~/app/I18n';
 import { Icon as SDIcon } from '~/components';
-
-export const filterTypeCondition = {
-	inOrNotIn: {
-		in: 'is',
-		notIn: 'is not'
-	},
-	textMatch: {
-		contains: 'contains',
-		startsWith: 'starts with',
-		endsWith: 'ends with',
-		equals: 'is'
-	},
-	optionalRange: {
-		from: 'from',
-		to: 'to'
-	},
-	trueOrFalse: {
-		true: 'is',
-		false: 'is not'
-	}
-} as const;
-
-export type FilterTypeCondition = typeof filterTypeCondition;
 
 export const RenderIcon = ({
 	className,
@@ -36,7 +14,7 @@ export const RenderIcon = ({
 	if (typeof icon === 'string' && icon.startsWith('#')) {
 		return (
 			<div
-				className={clsx('mr-0.5 h-[15px] w-[15px] shrink-0 rounded-full border', className)}
+				className={clsx('mr-0.5 size-[15px] shrink-0 rounded-full border', className)}
 				style={{
 					backgroundColor: icon ? icon : 'transparent',
 					borderColor: icon || '#efefef'

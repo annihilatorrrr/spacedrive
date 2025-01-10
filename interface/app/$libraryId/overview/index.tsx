@@ -1,33 +1,55 @@
+import { keepPreviousData } from '@tanstack/react-query';
+import { Key, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useBridgeQuery, useCache, useLibraryQuery, useNodes } from '@sd/client';
-import { useLocale } from '~/hooks';
+import { HardwareModel, useBridgeQuery, useLibraryQuery } from '@sd/client';
+import { useAccessToken, useLocale, useOperatingSystem } from '~/hooks';
 import { useRouteTitle } from '~/hooks/useRouteTitle';
 import { hardwareModelToIcon } from '~/util/hardware';
 
-import { SearchContextProvider, useSearch } from '../search';
+import { SearchContextProvider, useSearchFromSearchParams } from '../search';
 import SearchBar from '../search/SearchBar';
 import { AddLocationButton } from '../settings/library/locations/AddLocationButton';
 import { TopBarPortal } from '../TopBar/Portal';
+import TopBarOptions from '../TopBar/TopBarOptions';
 import FileKindStatistics from './FileKindStats';
 import OverviewSection from './Layout/Section';
 import LibraryStatistics from './LibraryStats';
 import NewCard from './NewCard';
 import StatisticItem from './StatCard';
 
+export interface FileKind {
+	kind: number;
+	name: string;
+	count: bigint;
+	total_bytes: bigint;
+}
+
 export const Component = () => {
 	useRouteTitle('Overview');
+	const os = useOperatingSystem();
 
 	const { t } = useLocale();
+	const accessToken = useAccessToken();
 
-	const locationsQuery = useLibraryQuery(['locations.list'], { keepPreviousData: true });
-	useNodes(locationsQuery.data?.nodes);
-	const locations = useCache(locationsQuery.data?.items) ?? [];
+	const locationsQuery = useLibraryQuery(['locations.list'], {
+		placeholderData: keepPreviousData
+	});
+	const locations = locationsQuery.data ?? [];
 
+	// not sure if we'll need the node state in the future, as it should be returned with the cloud.devices.list query
+	// const { data: node } = useBridgeQuery(['nodeState']);
+	const cloudDevicesList = useBridgeQuery(['cloud.devices.list']);
+
+	useEffect(() => {
+		const interval = setInterval(async () => {
+			await cloudDevicesList.refetch();
+		}, 10000);
+		return () => clearInterval(interval);
+	}, []);
 	const { data: node } = useBridgeQuery(['nodeState']);
-
-	const search = useSearch();
-
 	const stats = useLibraryQuery(['library.statistics']);
+
+	const search = useSearchFromSearchParams({ defaultTarget: 'paths' });
 
 	return (
 		<SearchContextProvider search={search}>
@@ -41,101 +63,41 @@ export const Component = () => {
 						</div>
 					}
 					center={<SearchBar redirectToSearch />}
-					// right={
-					// 	<TopBarOptions
-					// 		options={[
-					// 			[
-					// 				{
-					// 					toolTipLabel: 'Spacedrop',
-					// 					onClick: () => {},
-					// 					icon: <Broadcast className={TOP_BAR_ICON_STYLE} />,
-					// 					individual: true,
-					// 					showAtResolution: 'sm:flex'
-					// 				},
-					// 				{
-					// 					toolTipLabel: 'Key Manager',
-					// 					onClick: () => {},
-					// 					icon: <Key className={TOP_BAR_ICON_STYLE} />,
-					// 					individual: true,
-					// 					showAtResolution: 'sm:flex'
-					// 				},
-					// 				{
-					// 					toolTipLabel: 'Overview Display Settings',
-					// 					onClick: () => {},
-					// 					icon: <SlidersHorizontal className={TOP_BAR_ICON_STYLE} />,
-					// 					individual: true,
-					// 					showAtResolution: 'sm:flex'
-					// 				}
-					// 			]
-					// 		]}
-					// 	/>
-					// }
+					right={os === 'windows' && <TopBarOptions />}
 				/>
 				<div className="mt-4 flex flex-col gap-3 pt-3">
 					<OverviewSection>
 						<LibraryStatistics />
-					</OverviewSection>
-					<OverviewSection>
 						<FileKindStatistics />
 					</OverviewSection>
-					<OverviewSection count={1} title="Devices">
+
+					<OverviewSection
+						count={(cloudDevicesList.data?.length ?? 0) + (node ? 1 : 0)}
+						title={t('devices')}
+					>
 						{node && (
 							<StatisticItem
 								name={node.name}
 								icon={hardwareModelToIcon(node.device_model as any)}
-								totalSpace={stats.data?.statistics?.total_bytes_capacity || '0'}
-								freeSpace={stats.data?.statistics?.total_bytes_free || '0'}
+								totalSpace={
+									stats.data?.statistics?.total_local_bytes_capacity || '0'
+								}
+								freeSpace={stats.data?.statistics?.total_local_bytes_free || '0'}
 								color="#0362FF"
 								connectionType={null}
 							/>
 						)}
-						{/* <StatisticItem
-							name="Jamie's MacBook"
-							icon="Laptop"
-							total_space="4098046511104"
-							free_space="969004651119"
-							color="#0362FF"
-							connection_type="p2p"
-						/>
-						<StatisticItem
-							name="Jamie's iPhone"
-							icon="Mobile"
-							total_space="500046511104"
-							free_space="39006511104"
-							color="#0362FF"
-							connection_type="p2p"
-						/>
-						<StatisticItem
-							name="Titan NAS"
-							icon="Server"
-							total_space="60000046511104"
-							free_space="43000046511104"
-							color="#0362FF"
-							connection_type="p2p"
-						/>
-						<StatisticItem
-							name="Jamie's iPad"
-							icon="Tablet"
-							total_space="1074077906944"
-							free_space="121006553275"
-							color="#0362FF"
-							connection_type="lan"
-						/>
-						<StatisticItem
-							name="Jamie's Air"
-							icon="Laptop"
-							total_space="4098046511104"
-							free_space="969004651119"
-							color="#0362FF"
-							connection_type="p2p"
-						/> */}
-						<NewCard
-							icons={['Laptop', 'Server', 'SilverBox', 'Tablet']}
-							text="Spacedrive works best on all your devices."
-							className="h-auto"
-							// buttonText="Connect a device"
-						/>
-						{/**/}
+						{cloudDevicesList.data?.map((device) => (
+							<StatisticItem
+								key={device.pub_id}
+								name={device.name}
+								icon={hardwareModelToIcon(device.hardware_model as HardwareModel)}
+								totalSpace="0"
+								freeSpace="0"
+								color="#0362FF"
+								connectionType={'cloud'}
+							/>
+						))}
 					</OverviewSection>
 
 					<OverviewSection count={locations.length} title={t('locations')}>
@@ -153,30 +115,13 @@ export const Component = () => {
 						{!locations?.length && (
 							<NewCard
 								icons={['HDD', 'Folder', 'Globe', 'SD']}
-								text="Connect a local path, volume or network location to Spacedrive."
+								text={t('add_location_overview_description')}
 								button={() => <AddLocationButton variant="outline" />}
 							/>
 						)}
 					</OverviewSection>
 
-					<OverviewSection count={0} title="Cloud Drives">
-						{/* <StatisticItem
-							name="James Pine"
-							icon="DriveDropbox"
-							total_space="104877906944"
-							free_space="074877906944"
-							color="#0362FF"
-							connection_type="cloud"
-						/>
-						<StatisticItem
-							name="Spacedrive S3"
-							icon="DriveAmazonS3"
-							total_space="1074877906944"
-							free_space="704877906944"
-							color="#0362FF"
-							connection_type="cloud"
-						/> */}
-
+					<OverviewSection count={0} title={t('cloud_drives')}>
 						<NewCard
 							icons={[
 								'DriveAmazonS3',
@@ -185,26 +130,10 @@ export const Component = () => {
 								'DriveOneDrive'
 								// 'DriveBox'
 							]}
-							text="Connect your cloud accounts to Spacedrive."
-							// buttonText="Connect a cloud"
+							text={t('connect_cloud_description')}
+							// buttonText={t('connect_cloud)}
 						/>
 					</OverviewSection>
-
-					{/* <OverviewSection title="Locations">
-						<div className="flex flex-row gap-2">
-							{locations.map((location) => (
-								<div
-									key={location.id}
-									className="flex w-[100px] flex-col items-center gap-2"
-								>
-									<Icon size={80} name="Folder" />
-									<span className="text-xs font-medium truncate">
-										{location.name}
-									</span>
-								</div>
-							))}
-						</div>
-					</OverviewSection> */}
 				</div>
 			</div>
 		</SearchContextProvider>

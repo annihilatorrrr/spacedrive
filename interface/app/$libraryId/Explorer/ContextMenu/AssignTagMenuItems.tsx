@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import clsx from 'clsx';
 import { RefObject, useMemo, useRef } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { ExplorerItem, useCache, useLibraryQuery, useNodes } from '@sd/client';
+import { ExplorerItem, useLibraryQuery } from '@sd/client';
 import { Button, dialogManager, ModifierKeys, tw } from '@sd/ui';
 import CreateDialog, {
 	AssignTagItems,
@@ -23,7 +23,6 @@ interface Props {
 
 function useData({ items }: Props) {
 	const tags = useLibraryQuery(['tags.list'], { suspense: true });
-	useNodes(tags.data?.nodes);
 
 	// Map<tag::id, Vec<object::id>>
 	const tagsWithObjects = useLibraryQuery(
@@ -42,7 +41,7 @@ function useData({ items }: Props) {
 	return {
 		tags: {
 			...tags,
-			data: useCache(tags.data?.items)
+			data: tags.data
 		},
 		tagsWithObjects
 	};
@@ -155,7 +154,7 @@ const Tags = ({ items, parentRef }: Props & { parentRef: RefObject<HTMLDivElemen
 			{sortedTags.length > 0 ? (
 				<div
 					ref={parentRef}
-					className="h-full w-full overflow-auto"
+					className="size-full overflow-auto"
 					style={{ maxHeight: `400px` }}
 				>
 					<div
@@ -200,7 +199,7 @@ const Tags = ({ items, parentRef }: Props & { parentRef: RefObject<HTMLDivElemen
 											tag.id,
 											unassign
 												? // use objects that already have tag
-												  items.flatMap((item) => {
+													items.flatMap((item) => {
 														if (
 															item.type === 'Object' ||
 															item.type === 'Path'
@@ -209,18 +208,24 @@ const Tags = ({ items, parentRef }: Props & { parentRef: RefObject<HTMLDivElemen
 														}
 
 														return [];
-												  })
+													})
 												: // use objects that don't have tag
-												  items.flatMap<AssignTagItems[number]>((item) => {
-														if (item.type === 'Object') {
-															if (!objectsWithTag.has(item.item.id))
+													items.flatMap<AssignTagItems[number]>(
+														(item) => {
+															if (item.type === 'Object') {
+																if (
+																	!objectsWithTag.has(
+																		item.item.id
+																	)
+																)
+																	return [item];
+															} else if (item.type === 'Path') {
 																return [item];
-														} else if (item.type === 'Path') {
-															return [item];
-														}
+															}
 
-														return [];
-												  }),
+															return [];
+														}
+													),
 											unassign
 										);
 
@@ -228,7 +233,7 @@ const Tags = ({ items, parentRef }: Props & { parentRef: RefObject<HTMLDivElemen
 									}}
 								>
 									<div
-										className="mr-0.5 h-[15px] w-[15px] shrink-0 rounded-full border"
+										className="mr-0.5 size-[15px] shrink-0 rounded-full border"
 										style={{
 											backgroundColor:
 												objectsWithTag &&

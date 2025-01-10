@@ -1,10 +1,7 @@
+import { capitalize } from '@sd/client';
 import { keySymbols, ModifierKeys, modifierSymbols } from '@sd/ui';
 
 import { OperatingSystem } from '../util/Platform';
-
-function capitalize<T extends string>(string: T): Capitalize<T> {
-	return (string.charAt(0).toUpperCase() + string.slice(1)) as Capitalize<T>;
-}
 
 export function keybind<T extends string>(
 	modifers: ModifierKeys[],
@@ -17,7 +14,7 @@ export function keybind<T extends string>(
 
 	const keySymbol = keys.map(capitalize).map((key) => {
 		const symbol = keySymbols[key];
-		return symbol ? symbol[os] ?? symbol.Other : key;
+		return symbol ? (symbol[os] ?? symbol.Other) : key;
 	});
 
 	if (os === 'macOS' && !modifers.includes(ModifierKeys.Meta)) {

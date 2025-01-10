@@ -1,11 +1,10 @@
-import { useCallback, type HTMLAttributes, type PropsWithChildren } from 'react';
+import { useCallback, useEffect, type HTMLAttributes, type PropsWithChildren } from 'react';
 import {
 	createSearchParams,
 	useNavigate,
 	useSearchParams as useRawSearchParams
 } from 'react-router-dom';
 import {
-	FilePathFilterArgs,
 	isPath,
 	SearchFilterArgs,
 	useLibraryContext,
@@ -16,6 +15,7 @@ import {
 	type NonIndexedPathItem
 } from '@sd/client';
 import { ContextMenu, toast } from '@sd/ui';
+import { useLocale } from '~/hooks';
 import { isNonEmpty } from '~/util';
 import { usePlatform } from '~/util/Platform';
 
@@ -30,9 +30,11 @@ export const useViewItemDoubleClick = () => {
 	const explorer = useExplorerContext();
 	const { library } = useLibraryContext();
 	const { openFilePaths, openEphemeralFiles } = usePlatform();
-	const [_, setSearchParams] = useRawSearchParams();
+	const [searchParams] = useRawSearchParams();
 
 	const updateAccessTime = useLibraryMutation('files.updateAccessTime');
+
+	const { t } = useLocale();
 
 	const doubleClick = useCallback(
 		async (item?: ExplorerItem) => {
@@ -103,7 +105,10 @@ export const useViewItemDoubleClick = () => {
 							items.paths.map(({ id }) => id)
 						);
 					} catch (error) {
-						toast.error({ title: 'Failed to open file', body: `Error: ${error}.` });
+						toast.error({
+							title: t('failed_to_open_file_title'),
+							body: t('error_message', { error })
+						});
 					}
 				} else if (item && explorer.settingsStore.openOnDoubleClick === 'quickPreview') {
 					if (item.type !== 'Location' && !(isPath(item) && item.item.is_dir)) {
@@ -117,15 +122,15 @@ export const useViewItemDoubleClick = () => {
 			if (items.dirs.length > 0) {
 				const [item] = items.dirs;
 				if (item) {
-					setSearchParams((p) => {
-						const newParams = new URLSearchParams();
+					if (item.location_id !== null) {
+						const take = searchParams.get('take');
+						const params = new URLSearchParams({
+							path: `${item.materialized_path}${item.name}/`,
+							...(take !== null && { take })
+						});
 
-						newParams.set('path', `${item.materialized_path}${item.name}/`);
-						const take = p.get('take');
-						if (take !== null) newParams.set('take', take);
-
-						return newParams;
-					});
+						navigate(`/${library.uuid}/location/${item.location_id}?${params}`);
+					}
 					return;
 				}
 			}
@@ -158,7 +163,10 @@ export const useViewItemDoubleClick = () => {
 					try {
 						await openEphemeralFiles(items.non_indexed.map(({ path }) => path));
 					} catch (error) {
-						toast.error({ title: 'Failed to open file', body: `Error: ${error}.` });
+						toast.error({
+							title: t('failed_to_open_file_title'),
+							body: t('error_message', { error })
+						});
 					}
 				} else if (item && explorer.settingsStore.openOnDoubleClick === 'quickPreview') {
 					if (item.type !== 'Location' && !(isPath(item) && item.item.is_dir)) {
@@ -184,14 +192,15 @@ export const useViewItemDoubleClick = () => {
 			}
 		},
 		[
-			setSearchParams,
 			explorer.selectedItems,
 			explorer.settingsStore.openOnDoubleClick,
-			library.uuid,
-			navigate,
 			openFilePaths,
-			openEphemeralFiles,
-			updateAccessTime
+			updateAccessTime,
+			library.uuid,
+			t,
+			searchParams,
+			navigate,
+			openEphemeralFiles
 		]
 	);
 
@@ -206,6 +215,17 @@ export const ViewItem = ({ data, children, ...props }: ViewItemProps) => {
 	const explorerView = useExplorerViewContext();
 
 	const { doubleClick } = useViewItemDoubleClick();
+
+	useEffect(() => {
+		const handleContextMenu = (e: MouseEvent) => {
+			e.preventDefault();
+		};
+
+		document.addEventListener('contextmenu', handleContextMenu);
+		return () => {
+			document.removeEventListener('contextmenu', handleContextMenu);
+		};
+	}, []);
 
 	return (
 		<ContextMenu.Root

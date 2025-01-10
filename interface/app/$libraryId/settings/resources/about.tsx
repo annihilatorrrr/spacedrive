@@ -22,7 +22,7 @@ export const Component = () => {
 			<div className="flex flex-row items-center">
 				<img
 					src={AppLogo}
-					className="mr-8 h-[88px] w-[88px]"
+					className="mr-8 size-[88px]"
 					draggable="false"
 					onClick={onClick}
 				/>
@@ -46,7 +46,7 @@ export const Component = () => {
 					className="flex w-fit gap-2"
 					variant="gray"
 				>
-					<Discord className="h-4 w-4 fill-ink" />
+					<Discord className="size-4 fill-ink" />
 					{t('join_discord')}
 				</Button>
 				<Button
@@ -55,7 +55,7 @@ export const Component = () => {
 					className="flex w-fit gap-2"
 					variant="accent"
 				>
-					<Github className="h-4 w-4 fill-white" />
+					<Github className="size-4 fill-white" />
 					{t('star_on_github')}
 				</Button>
 				<Button
@@ -65,18 +65,20 @@ export const Component = () => {
 					className="flex w-fit gap-1"
 					variant="accent"
 				>
-					<Globe className="h-4 w-4" />
+					<Globe className="size-4" />
 					{t('website')}
 				</Button>
 			</div>
 			<Divider />
 			<div className="my-5">
-				<h1 className="mb-3 text-lg font-bold text-ink">{t('about_vision_title')}</h1>
+				<h1 className="mb-3 font-plex text-lg font-bold text-ink">
+					{t('about_vision_title')}
+				</h1>
 				<p className="w-full text-sm text-ink-faint">{t('about_vision_text')}</p>
 			</div>
 			<Divider />
 			<div>
-				<h1 className="my-5 text-lg font-bold text-ink">
+				<h1 className="my-5 font-plex text-lg font-bold text-ink">
 					{t('meet_contributors_behind_spacedrive')}
 				</h1>
 				<img

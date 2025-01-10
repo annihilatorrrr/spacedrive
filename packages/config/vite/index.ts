@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import ts from '@babel/preset-typescript';
 import react from '@vitejs/plugin-react-swc';
 import million from 'million/compiler';
 import { defineConfig } from 'vite';
@@ -12,6 +13,7 @@ import { narrowSolidPlugin } from './narrowSolidPlugin';
 const url = new URL('../../../interface/locales', import.meta.url);
 
 export default defineConfig({
+	clearScreen: false,
 	plugins: [
 		million.vite({ auto: true }),
 		tsconfigPaths(),
@@ -20,7 +22,7 @@ export default defineConfig({
 			namespaceResolution: 'relativePath'
 		}),
 		react(),
-		narrowSolidPlugin({ include: '**/*.solid.tsx' }),
+		narrowSolidPlugin({ include: '**/*.solid.tsx', babel: { presets: [[ts, {}]] } }),
 		svg({ svgrOptions: { icon: true } }),
 		createHtmlPlugin({
 			minify: true
@@ -33,7 +35,7 @@ export default defineConfig({
 	},
 	root: 'src',
 	build: {
-		sourcemap: true,
+		sourcemap: process.env.GENERATE_SOURCEMAP === 'false' ? false : true,
 		outDir: '../dist',
 		assetsDir: '.'
 	}

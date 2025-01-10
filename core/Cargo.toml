@@ -1,148 +1,154 @@
 [package]
-name = "sd-core"
-version = "0.2.4"
-description = "Virtual distributed filesystem engine that powers Spacedrive."
-authors = ["Spacedrive Technology Inc."]
-rust-version = "1.75.0"
-license = { workspace = true }
-repository = { workspace = true }
-edition = { workspace = true }
+name    = "sd-core"
+version = "0.5.0"
+
+authors                = ["Spacedrive Technology Inc <support@spacedrive.com>"]
+description            = "Virtual distributed filesystem engine that powers Spacedrive."
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+rust-version.workspace = true
 
 [features]
 default = []
 # This feature allows features to be disabled when the Core is running on mobile.
 mobile = []
 # This feature controls whether the Spacedrive Core contains functionality which requires FFmpeg.
-ffmpeg = ["dep:sd-ffmpeg"]
-location-watcher = ["dep:notify"]
-heif = ["sd-images/heif"]
-ai = ["dep:sd-ai"]
+ai     = ["dep:sd-ai"]
+ffmpeg = ["sd-core-heavy-lifting/ffmpeg", "sd-media-metadata/ffmpeg"]
+heif   = ["sd-images/heif"]
 
 [dependencies]
-# Sub-crates
-sd-cache = { path = "../crates/cache" }
-sd-core-sync = { path = "./crates/sync" }
-# sd-cloud-api = { path = "../crates/cloud-api" }
-sd-crypto = { path = "../crates/crypto", features = [
-	"rspc",
-	"specta",
-	"serde",
-	"keymanager",
-] }
-sd-file-path-helper = { path = "../crates/file-path-helper" }
-sd-ffmpeg = { path = "../crates/ffmpeg", optional = true }
-sd-file-ext = { path = "../crates/file-ext" }
-sd-images = { path = "../crates/images", features = [
-	"rspc",
-	"serde",
-	"specta",
-] }
-sd-media-metadata = { path = "../crates/media-metadata" }
-sd-p2p2 = { path = "../crates/p2p2", features = ["specta"] }
-sd-p2p-block = { path = "../crates/p2p-block" }
-sd-p2p-proto = { path = "../crates/p2p-proto" }
-sd-p2p-tunnel = { path = "../crates/p2p-tunnel" }
-sd-prisma = { path = "../crates/prisma" }
-sd-ai = { path = "../crates/ai", optional = true }
-sd-sync = { path = "../crates/sync" }
-sd-utils = { path = "../crates/utils" }
-sd-cloud-api = { version = "0.1.0", path = "../crates/cloud-api" }
+# Inner Core Sub-crates
+sd-core-cloud-services   = { path = "./crates/cloud-services" }
+sd-core-file-path-helper = { path = "./crates/file-path-helper" }
+sd-core-heavy-lifting    = { path = "./crates/heavy-lifting" }
+sd-core-indexer-rules    = { path = "./crates/indexer-rules" }
+sd-core-prisma-helpers   = { path = "./crates/prisma-helpers" }
+sd-core-sync             = { path = "./crates/sync" }
 
+# Spacedrive Sub-crates
+sd-actors         = { path = "../crates/actors" }
+sd-ai             = { path = "../crates/ai", optional = true }
+sd-crypto         = { path = "../crates/crypto" }
+sd-ffmpeg         = { path = "../crates/ffmpeg", optional = true }
+sd-file-ext       = { path = "../crates/file-ext" }
+sd-images         = { path = "../crates/images", features = ["rspc", "serde", "specta"] }
+sd-media-metadata = { path = "../crates/media-metadata" }
+sd-p2p            = { path = "../crates/p2p", features = ["specta"] }
+sd-p2p-block      = { path = "../crates/p2p/crates/block" }
+sd-p2p-proto      = { path = "../crates/p2p/crates/proto" }
+sd-p2p-tunnel     = { path = "../crates/p2p/crates/tunnel" }
+sd-prisma         = { path = "../crates/prisma" }
+sd-sync           = { path = "../crates/sync" }
+sd-task-system    = { path = "../crates/task-system" }
+sd-utils          = { path = "../crates/utils" }
 
 # Workspace dependencies
-async-channel = { workspace = true }
-async-trait = { workspace = true }
-axum = { workspace = true }
-base64 = { workspace = true }
-blake3 = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
-futures = { workspace = true }
+async-channel       = { workspace = true }
+async-stream        = { workspace = true }
+async-trait         = { workspace = true }
+axum                = { workspace = true, features = ["ws"] }
+base64              = { workspace = true }
+blake3              = { workspace = true }
+bytes               = { workspace = true }
+chrono              = { workspace = true, features = ["serde"] }
+futures             = { workspace = true }
 futures-concurrency = { workspace = true }
-image = { workspace = true }
-normpath = { workspace = true, features = ["localization"] }
-once_cell = { workspace = true }
-pin-project-lite = { workspace = true }
-prisma-client-rust = { workspace = true }
-regex = { workspace = true }
-reqwest = { workspace = true, features = ["json", "native-tls-vendored"] }
-rmp-serde = { workspace = true }
-rspc = { workspace = true, features = [
-	"axum",
-	"uuid",
-	"chrono",
-	"tracing",
-	"alpha",
-	"unstable",
-] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-specta = { workspace = true }
-strum = { workspace = true, features = ["derive"] }
-strum_macros = { workspace = true }
-tempfile = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = [
-	"sync",
-	"rt-multi-thread",
-	"io-util",
-	"macros",
-	"time",
-	"process",
-] }
-tokio-stream = { workspace = true, features = ["fs"] }
-tokio-util = { workspace = true, features = ["io"] }
-tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-uuid = { workspace = true, features = ["v4", "serde"] }
-webp = { workspace = true }
-
+hyper               = { workspace = true, features = ["client", "http1", "server"] }
+image               = { workspace = true }
+itertools           = { workspace = true }
+libc                = { workspace = true }
+normpath            = { workspace = true, features = ["localization"] }
+pin-project-lite    = { workspace = true }
+prisma-client-rust  = { workspace = true, features = ["rspc"] }
+regex               = { workspace = true }
+reqwest             = { workspace = true, features = ["json", "native-tls-vendored"] }
+rmp-serde           = { workspace = true }
+rmpv                = { workspace = true }
+rspc                = { workspace = true, features = ["alpha", "axum", "chrono", "unstable", "uuid"] }
+sd-cloud-schema     = { workspace = true }
+serde               = { workspace = true, features = ["derive", "rc"] }
+serde_json          = { workspace = true }
+specta              = { workspace = true }
+strum               = { workspace = true, features = ["derive"] }
+strum_macros        = { workspace = true }
+tempfile            = { workspace = true }
+thiserror           = { workspace = true }
+tokio-stream        = { workspace = true, features = ["fs"] }
+tokio-util          = { workspace = true, features = ["io"] }
+tracing             = { workspace = true }
+tracing-subscriber  = { workspace = true, features = ["env-filter"] }
+uuid                = { workspace = true, features = ["serde", "v4", "v7"] }
 
 # Specific Core dependencies
-async-recursion = "1.0.5"
-async-stream = "0.3.5"
-bytes = "1.5.0"
-ctor = "0.2.5"
-directories = "5.0.1"
-flate2 = "1.0.28"
-globset = { version = "^0.4.13", features = ["serde1"] }
-hostname = "0.3.1"
-http-body = "0.4.5"
-http-range = "0.1.5"
-int-enum = "0.5.0"
-itertools = "0.12.0"
-mini-moka = "0.10.2"
-notify = { version = "=5.2.0", default-features = false, features = [
-	"macos_fsevent",
-], optional = true }
-rmpv = "^1.0.1"
-serde-hashkey = "0.4.5"
-serde_repr = "0.1"
-serde_with = "3.4.0"
-slotmap = "1.0.6"
-static_assertions = "1.1.0"
-sysinfo = "0.29.10"
-tar = "0.4.40"
-aws-sdk-s3 = { version = "1.5.0", features = ["behavior-version-latest"] }
-aws-config = "1.0.3"
-aws-credential-types = "1.0.3"
-base91 = "0.1.0"
-sd-actors = { version = "0.1.0", path = "../crates/actors" }
-tower-service = "0.3.2"
-hyper = { version = "=0.14.28", features = ["http1", "server", "client"] }
+async-recursion  = "1.1"
+base91           = "0.1.0"
+ctor             = "0.2.8"
+directories      = "5.0"
+flate2           = "1.0"
+fsevent          = "2.1.2"
+hex              = "0.4.3"
+hostname         = "0.4.0"
+http-body        = "1.0"
+http-range       = "0.1.5"
+hyper-util       = { version = "0.1.9", features = ["tokio"] }
+int-enum         = "0.5"                                       # Update blocked due to API breaking changes
+mini-moka        = "0.10.3"
+serde-hashkey    = "0.4.5"
+serde_repr       = "0.1.19"
+serde_with       = "3.8"
+slotmap          = "1.0"
+sysinfo          = "0.29.11"                                   # Update blocked due to API breaking changes
+tar              = "0.4.41"
+tower-service    = "0.3.2"
+tracing-appender = "0.2.3"
+whoami           = "1.5.2"
+
+[dependencies.tokio]
+features  = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"]
+workspace = true
+
+[dependencies.notify]
+default-features = false
+features         = ["macos_fsevent"]
+git              = "https://github.com/notify-rs/notify.git"
+rev              = "c3929ed114"
 
 # Override features of transitive dependencies
 [dependencies.openssl]
-version = "=0.10.61"
 features = ["vendored"]
+version  = "0.10.66"
 [dependencies.openssl-sys]
-version = "=0.9.97"
 features = ["vendored"]
+version  = "0.9.103"
 
 # Platform-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
-plist = "1"
+plist = "1.6"
+trash = "5.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+trash = "5.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+trash   = "5.1"
+windows = { features = ["Win32_Storage_FileSystem"], version = "0.58" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+icrate = { version = "0.1.2", features = [
+	"Foundation",
+	"Foundation_NSFileManager",
+	"Foundation_NSNumber",
+	"Foundation_NSString"
+] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+tracing-android = "0.2.0"
 
 [dev-dependencies]
-tracing-test = "^0.2.4"
-aovec = "1.1.0"
+# Workspace dependencies
+tracing-test = { workspace = true }
+
+# Specific Core dependencies
+boxcar = "0.2.5"

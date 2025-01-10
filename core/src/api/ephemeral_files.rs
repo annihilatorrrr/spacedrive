@@ -1,23 +1,28 @@
 use crate::{
-	api::utils::library,
+	api::{
+		files::{create_file, MediaData},
+		utils::library,
+	},
 	invalidate_query,
 	library::Library,
 	object::{
 		fs::{error::FileSystemJobsError, find_available_filename_for_duplicate},
-		media::media_data_extractor::{
-			can_extract_media_data_for_image, extract_media_data, MediaDataError,
-		},
+		// media::exif_metadata_extractor::{can_extract_exif_data_for_image, extract_exif_data},
 	},
 };
 
-use sd_file_ext::extensions::ImageExtension;
-use sd_file_path_helper::IsolatedFilePathData;
-use sd_media_metadata::MediaMetadata;
+use sd_core_file_path_helper::IsolatedFilePathData;
+use sd_core_heavy_lifting::media_processor::exif_media_data;
+
+use sd_file_ext::{
+	extensions::{Extension, ImageExtension},
+	kind::ObjectKind,
+};
+use sd_media_metadata::FFmpegMetadata;
 use sd_utils::error::FileIOError;
 
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
-use async_recursion::async_recursion;
 use futures_concurrency::future::TryJoin;
 use regex::Regex;
 use rspc::{alpha::AlphaRouter, ErrorCode};
@@ -26,6 +31,8 @@ use specta::Type;
 use tokio::{fs, io};
 use tokio_stream::{wrappers::ReadDirStream, StreamExt};
 use tracing::{error, warn};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use trash;
 
 use super::{
 	files::{create_directory, FromPattern},
@@ -33,35 +40,70 @@ use super::{
 };
 
 const UNTITLED_FOLDER_STR: &str = "Untitled Folder";
+const UNTITLED_FILE_STR: &str = "Untitled";
+const UNTITLED_TEXT_FILE_STR: &str = "Untitled.txt";
+
+#[derive(Type, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum EphemeralFileCreateContextTypes {
+	Empty,
+	Text,
+}
 
 pub(crate) fn mount() -> AlphaRouter<Ctx> {
 	R.router()
 		.procedure("getMediaData", {
 			R.query(|_, full_path: PathBuf| async move {
-				let Some(extension) = full_path.extension().and_then(|ext| ext.to_str()) else {
-					return Ok(None);
-				};
+				let kind: Option<ObjectKind> = Extension::resolve_conflicting(&full_path, false)
+					.await
+					.map(Into::into);
+				match kind {
+					Some(ObjectKind::Image) => {
+						let Some(extension) = full_path.extension().and_then(|ext| ext.to_str())
+						else {
+							return Ok(None);
+						};
 
-				// TODO(fogodev): change this when we have media data for audio and videos
-				let image_extension = ImageExtension::from_str(extension).map_err(|e| {
-					error!("Failed to parse image extension: {e:#?}");
-					rspc::Error::new(ErrorCode::BadRequest, "Invalid image extension".to_string())
-				})?;
+						let image_extension = ImageExtension::from_str(extension).map_err(|e| {
+							error!(?e, "Failed to parse image extension;");
+							rspc::Error::new(
+								ErrorCode::BadRequest,
+								"Invalid image extension".to_string(),
+							)
+						})?;
 
-				if !can_extract_media_data_for_image(&image_extension) {
-					return Ok(None);
-				}
+						if !exif_media_data::can_extract(image_extension) {
+							return Ok(None);
+						}
 
-				match extract_media_data(full_path.clone()).await {
-					Ok(img_media_data) => Ok(Some(MediaMetadata::Image(Box::new(img_media_data)))),
-					Err(MediaDataError::MediaData(sd_media_metadata::Error::NoExifDataOnPath(
-						_,
-					))) => Ok(None),
-					Err(e) => Err(rspc::Error::with_cause(
-						ErrorCode::InternalServerError,
-						"Failed to extract media data".to_string(),
-						e,
-					)),
+						let exif_data = exif_media_data::extract(full_path)
+							.await
+							.map_err(|e| {
+								rspc::Error::with_cause(
+									ErrorCode::InternalServerError,
+									"Failed to extract media data".to_string(),
+									e,
+								)
+							})?
+							.map(MediaData::Exif);
+
+						Ok(exif_data)
+					}
+					Some(v) if v == ObjectKind::Audio || v == ObjectKind::Video => {
+						let ffmpeg_data = MediaData::FFmpeg(
+							FFmpegMetadata::from_path(full_path).await.map_err(|e| {
+								error!(?e, "Failed to extract ffmpeg metadata;");
+								rspc::Error::with_cause(
+									ErrorCode::InternalServerError,
+									e.to_string(),
+									e,
+								)
+							})?,
+						);
+
+						Ok(Some(ffmpeg_data))
+					}
+					_ => Ok(None), // No media data
 				}
 			})
 		})
@@ -77,6 +119,33 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 					path.push(name.as_deref().unwrap_or(UNTITLED_FOLDER_STR));
 
 					create_directory(path, &library).await
+				},
+			)
+		})
+		.procedure("createFile", {
+			#[derive(Type, Deserialize)]
+			pub struct CreateEphemeralFileArgs {
+				pub path: PathBuf,
+				pub context: EphemeralFileCreateContextTypes,
+				pub name: Option<String>,
+			}
+			R.with2(library()).mutation(
+				|(_, library),
+				 CreateEphemeralFileArgs {
+				     mut path,
+				     name,
+				     context,
+				 }: CreateEphemeralFileArgs| async move {
+					match context {
+						EphemeralFileCreateContextTypes::Empty => {
+							path.push(name.as_deref().unwrap_or(UNTITLED_FILE_STR));
+						}
+						EphemeralFileCreateContextTypes::Text => {
+							path.push(name.as_deref().unwrap_or(UNTITLED_TEXT_FILE_STR));
+						}
+					}
+
+					create_file(path, &library).await
 				},
 			)
 		})
@@ -99,6 +168,54 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 									e,
 									"Failed to get file metadata for deletion",
 								))),
+							}
+						})
+						.collect::<Vec<_>>()
+						.try_join()
+						.await?;
+
+					invalidate_query!(library, "search.ephemeralPaths");
+
+					Ok(())
+				})
+		})
+		.procedure("moveToTrash", {
+			R.with2(library())
+				.mutation(|(_, library), paths: Vec<PathBuf>| async move {
+					if cfg!(target_os = "ios") || cfg!(target_os = "android") {
+						return Err(rspc::Error::new(
+							ErrorCode::MethodNotSupported,
+							"Moving to trash is not supported on this platform".to_string(),
+						));
+					}
+
+					paths
+						.into_iter()
+						.map(|path| async move {
+							match fs::metadata(&path).await {
+								Ok(_) => {
+									#[cfg(not(any(target_os = "ios", target_os = "android")))]
+									trash::delete(&path).map_err(|e| {
+										FileIOError::from((
+											path,
+											match e {
+												#[cfg(all(unix, not(target_os = "macos")))]
+												trash::Error::FileSystem { path: _, source: e } => e,
+												_ => io::Error::other(e),
+											},
+											"Failed to delete file",
+										))
+									})?;
+
+									Ok::<_, rspc::Error>(())
+								}
+								Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+								Err(e) => Err(FileIOError::from((
+									path,
+									e,
+									"Failed to get file metadata for deletion",
+								))
+								.into()),
 							}
 						})
 						.collect::<Vec<_>>()
@@ -269,9 +386,10 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 
 							fs::rename(&old_path, &new_path).await.map_err(|e| {
 								error!(
-									"Failed to rename file from: '{}' to: '{}'; Error: {e:#?}",
-									old_path.display(),
-									new_path.display()
+									old_path = %old_path.display(),
+									new_path = %new_path.display(),
+									?e,
+									"Failed to rename file;",
 								);
 								let e = FileIOError::from((old_path, e, "Failed to rename file"));
 								rspc::Error::with_cause(ErrorCode::Conflict, e.to_string(), e)
@@ -362,7 +480,6 @@ impl EphemeralFileSystemOps {
 		Ok(())
 	}
 
-	#[async_recursion]
 	async fn copy(self, library: &Library) -> Result<(), rspc::Error> {
 		self.check().await?;
 
@@ -378,7 +495,7 @@ impl EphemeralFileSystemOps {
 					let target = target_dir.join(name);
 					Some((source, target))
 				} else {
-					warn!("Skipping file with no name: '{}'", source.display());
+					warn!(source = %source.display(), "Skipping file with no name;");
 					None
 				}
 			})
@@ -465,11 +582,13 @@ impl EphemeralFileSystemOps {
 						.await?;
 
 					if !more_files.is_empty() {
-						Self {
-							sources: more_files,
-							target_dir: target,
-						}
-						.copy(library)
+						Box::pin(
+							Self {
+								sources: more_files,
+								target_dir: target,
+							}
+							.copy(library),
+						)
 						.await
 					} else {
 						Ok(())
@@ -500,7 +619,7 @@ impl EphemeralFileSystemOps {
 					let target = target_dir.join(name);
 					Some((source, target))
 				} else {
-					warn!("Skipping file with no name: '{}'", source.display());
+					warn!(source = %source.display(), "Skipping file with no name;");
 					None
 				}
 			})

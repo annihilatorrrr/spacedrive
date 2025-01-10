@@ -1,6 +1,12 @@
 import { TextItems } from '.';
-import { formatNumber } from '../..';
-import { JobProgressEvent, JobReport } from '../../core';
+import { formatNumber, humanizeSize, uint32ArrayToBigInt } from '../..';
+import {
+	JobName,
+	JobProgressEvent,
+	Report,
+	ReportMetadata,
+	ReportOutputMetadata
+} from '../../core';
 
 interface JobNiceData {
 	name: string;
@@ -9,39 +15,55 @@ interface JobNiceData {
 	isRunning: boolean;
 	isQueued: boolean;
 	isPaused: boolean;
-	indexedPath: any;
+	indexedPath?: any;
 	taskCount: number;
 	completedTaskCount: number;
-	meta: any;
-	output: any;
+	meta: ReportMetadata[];
+	output: ReportOutputMetadata[];
 }
 
-export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | null): JobNiceData {
+export function useJobInfo(job: Report, realtimeUpdate: JobProgressEvent | null): JobNiceData {
 	const isRunning = job.status === 'Running',
 		isQueued = job.status === 'Queued',
 		isPaused = job.status === 'Paused',
-		indexedPath = (job.metadata?.data as any)?.location.path,
 		taskCount = realtimeUpdate?.task_count || job.task_count,
 		completedTaskCount = realtimeUpdate?.completed_task_count || job.completed_task_count,
-		phase = realtimeUpdate?.phase,
-		meta = job.metadata,
-		output = (meta?.output as any)?.run_metadata;
+		phase = realtimeUpdate?.phase || job.phase;
+
+	const output: ReportOutputMetadata[] = [];
+	let indexedPath: string | undefined;
+	for (const metadata of job.metadata) {
+		if (metadata.type === 'output') {
+			output.push(metadata.metadata);
+		}
+
+		if (metadata.type === 'input' && metadata.metadata.type === 'sub_path') {
+			indexedPath = metadata.metadata.data;
+		}
+	}
 
 	const data = {
 		isRunning,
 		isQueued,
 		isPaused,
-		indexedPath,
 		taskCount,
 		completedTaskCount,
-		meta,
+		meta: job.metadata,
 		output
 	};
 
 	switch (job.name) {
-		case 'indexer':
+		case 'Indexer': {
+			let totalPaths = 0n;
+			for (const metadata of output) {
+				if (metadata.type === 'indexer') {
+					totalPaths = uint32ArrayToBigInt(metadata.data.total_paths);
+				}
+			}
+
 			return {
 				...data,
+				indexedPath,
 				name: `${isQueued ? 'Index' : isRunning ? 'Indexing' : 'Indexed'} files  ${
 					indexedPath ? `at ${indexedPath}` : ``
 				}`,
@@ -51,17 +73,41 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 							text: isPaused
 								? job.message
 								: isRunning && realtimeUpdate?.message
-								? realtimeUpdate.message
-								: `${formatNumber(output?.total_paths)} ${plural(
-										output?.total_paths,
-										'path'
-								  )} discovered`
+									? realtimeUpdate.message
+									: `${formatNumber(totalPaths)} ${plural(
+											totalPaths,
+											'path'
+										)} discovered`
 						}
 					]
 				]
 			};
-		case 'media_processor': {
+		}
+		case 'MediaProcessor': {
 			const generateTexts = () => {
+				const parsedOutput = {
+					mediaDataExtracted: 0n,
+					mediaDataSkipped: 0n,
+					thumbnailsGenerated: 0n,
+					thumbnailsSkipped: 0n
+				};
+				for (const metadata of output) {
+					if (metadata.type === 'media_processor') {
+						const {
+							media_data_extracted,
+							media_data_skipped,
+							thumbnails_generated,
+							thumbnails_skipped
+						} = metadata.data;
+
+						parsedOutput.mediaDataExtracted = uint32ArrayToBigInt(media_data_extracted);
+						parsedOutput.mediaDataSkipped = uint32ArrayToBigInt(media_data_skipped);
+						parsedOutput.thumbnailsGenerated =
+							uint32ArrayToBigInt(thumbnails_generated);
+						parsedOutput.thumbnailsSkipped = uint32ArrayToBigInt(thumbnails_skipped);
+					}
+				}
+
 				switch (phase) {
 					case 'media_data': {
 						return [
@@ -69,7 +115,7 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 								text: `${
 									completedTaskCount
 										? formatNumber(completedTaskCount || 0)
-										: formatNumber(output?.media_data?.extracted)
+										: formatNumber(parsedOutput.mediaDataExtracted)
 								} of ${formatNumber(taskCount)} ${plural(
 									taskCount,
 									'media file'
@@ -84,7 +130,7 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 								text: `${
 									completedTaskCount
 										? formatNumber(completedTaskCount || 0)
-										: formatNumber(output?.thumbs_processed)
+										: formatNumber(parsedOutput.thumbnailsGenerated)
 								} of ${formatNumber(taskCount)} ${plural(
 									taskCount,
 									'thumbnail'
@@ -93,27 +139,30 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 						];
 					}
 
-					case 'labels': {
-						return [
-							{
-								text: `Labeled ${
-									completedTaskCount
-										? formatNumber(completedTaskCount || 0)
-										: formatNumber(output?.labels_extracted)
-								} of ${formatNumber(taskCount)} ${plural(taskCount, 'file')}`
-							}
-						];
-					}
+					// case 'labels': {
+					// 	return [
+					// 		{
+					// 			text: `Labeled ${
+					// 				completedTaskCount
+					// 					? formatNumber(completedTaskCount || 0)
+					// 					: formatNumber(output?.labels_extracted)
+					// 			} of ${formatNumber(taskCount)} ${plural(taskCount, 'file')}`
+					// 		}
+					// 	];
+					// }
 
 					default: {
 						// If we don't have a phase set, then we're done
 
-						const totalThumbs = output?.thumbs_processed || 0;
+						const totalThumbs =
+							parsedOutput.thumbnailsGenerated + parsedOutput.thumbnailsSkipped;
 						const totalMediaFiles =
-							output?.media_data?.extracted || 0 + output?.media_data?.skipped || 0;
+							parsedOutput.mediaDataExtracted + parsedOutput.mediaDataSkipped;
 
-						return totalThumbs === 0 && totalMediaFiles === 0
-							? [{ text: 'None processed' }]
+						return totalThumbs === 0n && totalMediaFiles === 0n
+							? taskCount === 0
+								? [{ text: 'Queued' }]
+								: [{ text: 'None processed' }]
 							: [
 									{
 										text: `Extracted ${formatNumber(totalMediaFiles)} ${plural(
@@ -127,7 +176,7 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 											'thumb'
 										)}`
 									}
-							  ];
+								];
 					}
 				}
 			};
@@ -141,47 +190,91 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 			};
 		}
 
-		case 'file_identifier':
+		case 'FileIdentifier': {
+			const parsedOutput = {
+				totalOrphanPaths: 0n,
+				totalObjectsCreated: 0n,
+				totalObjectsLinked: 0n
+			};
+			for (const metadata of output) {
+				if (metadata.type === 'file_identifier') {
+					const { total_orphan_paths, total_objects_created, total_objects_linked } =
+						metadata.data;
+
+					parsedOutput.totalOrphanPaths = uint32ArrayToBigInt(total_orphan_paths);
+					parsedOutput.totalObjectsCreated = uint32ArrayToBigInt(total_objects_created);
+					parsedOutput.totalObjectsLinked = uint32ArrayToBigInt(total_objects_linked);
+				}
+			}
+
+			const generatePausedText = () => {
+				switch (phase) {
+					case 'searching_orphans': {
+						return { text: `Found ${formatNumber(taskCount * 100)} orphans paths` };
+					}
+					case 'identifying_files': {
+						return {
+							text: `Identified ${formatNumber(completedTaskCount * 100)} of ${formatNumber(taskCount * 100)} files`
+						};
+					}
+					case 'processing_objects': {
+						return {
+							text: `Processed ${formatNumber(completedTaskCount * 100)} of ${formatNumber(taskCount * 100)} objects`
+						};
+					}
+					default: {
+						return { text: 'No files changed' };
+					}
+				}
+			};
+
 			return {
 				...data,
 				name: `${isQueued ? 'Extract' : isRunning ? 'Extracting' : 'Extracted'} metadata`,
 				textItems: [
 					!isRunning
-						? output?.total_orphan_paths === 0
-							? [{ text: 'No files changed' }]
+						? parsedOutput.totalOrphanPaths === 0n
+							? [generatePausedText()]
 							: [
 									{
-										text: `${formatNumber(output?.total_orphan_paths)} ${plural(
-											output?.total_orphan_paths,
+										text: `${formatNumber(parsedOutput.totalOrphanPaths)} ${plural(
+											parsedOutput.totalOrphanPaths,
 											'file'
 										)}`
 									},
 									{
 										text: `${formatNumber(
-											output?.total_objects_created
+											parsedOutput.totalObjectsCreated
 										)} ${plural(
-											output?.total_objects_created,
+											parsedOutput.totalObjectsCreated,
 											'Object'
 										)} created`
 									},
 									{
 										text: `${formatNumber(
-											output?.total_objects_linked
-										)} ${plural(output?.total_objects_linked, 'Object')} linked`
+											parsedOutput.totalObjectsLinked
+										)} ${plural(parsedOutput.totalObjectsLinked, 'Object')} linked`
 									}
-							  ]
+								]
 						: [{ text: addCommasToNumbersInMessage(realtimeUpdate?.message) }]
 				]
 			};
-		case 'file_copier':
+		}
+
+		case 'Copy':
 			return {
 				...data,
-				name: `${isQueued ? 'Copy' : isRunning ? 'Copying' : 'Copied'} ${
-					isRunning ? completedTaskCount + 1 : completedTaskCount
-				} ${isRunning ? `of ${job.task_count}` : ``} ${plural(job.task_count, 'file')}`,
-				textItems: [[{ text: job.status }]]
+				name: isQueued
+					? `Duplicate ${taskCount} ${plural(taskCount, 'file')}`
+					: isRunning
+						? `Duplicating ${completedTaskCount}% of ${realtimeUpdate?.info} ${plural(taskCount, 'file')} (${humanizeSize(parseInt(realtimeUpdate?.message || '0'))})`
+						: `Duplicated ${taskCount} ${plural(taskCount, 'file')}`,
+				textItems: realtimeUpdate
+					? [[{ text: realtimeUpdate?.phase }]]
+					: [[{ text: job.status }]]
 			};
-		case 'file_deleter':
+
+		case 'Delete':
 			return {
 				...data,
 				name: `${
@@ -189,7 +282,7 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 				} ${completedTaskCount} ${plural(completedTaskCount, 'file')}`,
 				textItems: [[{ text: job.status }]]
 			};
-		case 'file_cutter':
+		case 'Move':
 			return {
 				...data,
 				name: `${
@@ -197,12 +290,12 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 				} ${completedTaskCount} ${plural(completedTaskCount, 'file')}`,
 				textItems: [[{ text: job.status }]]
 			};
-		case 'object_validator':
+		case 'FileValidator':
 			return {
 				...data,
 				name: `${isQueued ? 'Validate' : isRunning ? 'Validating' : 'Validated'} ${
 					!isQueued ? completedTaskCount : ''
-				} ${plural(completedTaskCount, 'object')}`,
+				} ${plural(completedTaskCount, 'file')}`,
 				textItems: [[{ text: job.status }]]
 			};
 		default:
@@ -214,10 +307,9 @@ export function useJobInfo(job: JobReport, realtimeUpdate: JobProgressEvent | nu
 	}
 }
 
-function plural(count: number, name?: string) {
-	if (count === 1) {
-		return name || '';
-	}
+function plural(count: number | bigint, name?: string) {
+	if (count === 1 || count === 1n) return name || '';
+
 	return `${name || ''}s`;
 }
 

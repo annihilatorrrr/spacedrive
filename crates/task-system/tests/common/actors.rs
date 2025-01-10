@@ -1,5 +1,6 @@
 use sd_task_system::{
-	ExecStatus, Interrupter, Task, TaskDispatcher, TaskHandle, TaskId, TaskOutput, TaskStatus,
+	BaseTaskDispatcher, ExecStatus, Interrupter, Task, TaskDispatcher, TaskHandle, TaskId,
+	TaskOutput, TaskStatus,
 };
 
 use std::{
@@ -24,7 +25,7 @@ const SAMPLE_ACTOR_SAVE_STATE_FILE_NAME: &str = "sample_actor_save_state.bin";
 
 pub struct SampleActor {
 	data: Arc<String>, // Can hold any kind of actor data, like an AI model
-	task_dispatcher: TaskDispatcher<SampleError>,
+	task_dispatcher: BaseTaskDispatcher<SampleError>,
 	task_handles_tx: chan::Sender<TaskHandle<SampleError>>,
 }
 
@@ -32,7 +33,7 @@ impl SampleActor {
 	pub async fn new(
 		data_directory: impl AsRef<Path>,
 		data: String,
-		task_dispatcher: TaskDispatcher<SampleError>,
+		task_dispatcher: BaseTaskDispatcher<SampleError>,
 	) -> (Self, broadcast::Receiver<()>) {
 		let (task_handles_tx, task_handles_rx) = chan::bounded(8);
 
@@ -82,6 +83,7 @@ impl SampleActor {
 							paused_count,
 						))
 						.await
+						.unwrap()
 				} else {
 					task_dispatcher
 						.dispatch(SampleActorTask::with_id(
@@ -91,6 +93,7 @@ impl SampleActor {
 							paused_count,
 						))
 						.await
+						.unwrap()
 				})
 				.await
 				.expect("Task handle receiver dropped");
@@ -120,8 +123,12 @@ impl SampleActor {
 				self.task_dispatcher
 					.dispatch(self.new_priority_task(duration))
 					.await
+					.unwrap()
 			} else {
-				self.task_dispatcher.dispatch(self.new_task(duration)).await
+				self.task_dispatcher
+					.dispatch(self.new_task(duration))
+					.await
+					.unwrap()
 			})
 			.await
 			.expect("Task handle receiver dropped");
@@ -162,7 +169,7 @@ impl SampleActor {
 				async {
 					if let Some(out) = handles.next().await {
 						match out {
-							Ok(TaskStatus::Done(maybe_out)) => {
+							Ok(TaskStatus::Done((_task_id, maybe_out))) => {
 								if let TaskOutput::Out(out) = maybe_out {
 									info!(
 										"Task completed: {:?}",
@@ -226,7 +233,7 @@ impl SampleActor {
 					)
 					.chain(handles.filter_map(|handle| async move {
 						match handle {
-							Ok(TaskStatus::Done(maybe_out)) => {
+							Ok(TaskStatus::Done((_task_id, maybe_out))) => {
 								if let TaskOutput::Out(out) = maybe_out {
 									info!(
 										"Task completed: {:?}",
@@ -331,7 +338,17 @@ impl Task<SampleError> for SampleActorTask {
 
 	async fn run(&mut self, interrupter: &Interrupter) -> Result<ExecStatus, SampleError> {
 		info!("Actor data: {:#?}", self.actor_data);
-		self.timed_task.run(interrupter).await
+		let out = self.timed_task.run(interrupter).await?;
+		if let ExecStatus::Done(TaskOutput::Out(out)) = &out {
+			info!(
+				"Task completed with {} pauses",
+				out.downcast_ref::<TimedTaskOutput>()
+					.expect("we know the task type")
+					.pauses_count
+			);
+		}
+
+		Ok(out)
 	}
 
 	fn with_priority(&self) -> bool {

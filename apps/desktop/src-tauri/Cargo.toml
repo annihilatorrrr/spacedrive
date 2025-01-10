@@ -1,69 +1,90 @@
 [package]
-name = "sd-desktop"
-version = "0.2.4"
-description = "The universal file manager."
-authors = ["Spacedrive Technology Inc <support@spacedrive.com>"]
-default-run = "sd-desktop"
-license = { workspace = true }
-repository = { workspace = true }
-edition = { workspace = true }
+name    = "sd-desktop"
+version = "0.5.0"
+
+authors              = ["Spacedrive Technology Inc <support@spacedrive.com>"]
+default-run          = "sd-desktop"
+description          = "The universal file manager."
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
 
 [dependencies]
-sd-core = { path = "../../../core", features = [
-	"ffmpeg",
-	"location-watcher",
-	"heif",
-] }
-sd-fda = { path = "../../../crates/fda" }
+# Spacedrive Sub-crates
+sd-core   = { path = "../../../core", features = ["ffmpeg", "heif"] }
+sd-fda    = { path = "../../../crates/fda" }
 sd-prisma = { path = "../../../crates/prisma" }
 
-axum = { workspace = true, features = ["headers", "query"] }
-hyper = "0.14.28"
-futures = { workspace = true }
-http = { workspace = true }
+# Workspace dependencies
+axum               = { workspace = true, features = ["query"] }
+axum-extra         = { workspace = true, features = ["typed-header"] }
+base64             = { workspace = true }
+futures            = { workspace = true }
+http               = { workspace = true }
+hyper              = { workspace = true }
 prisma-client-rust = { workspace = true }
-rand = { workspace = true }
-rspc = { workspace = true, features = ["tauri", "tracing"] }
-serde = { workspace = true }
-specta = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
-tracing = { workspace = true }
-tauri-specta = { workspace = true, features = ["typescript"] }
-uuid = { workspace = true, features = ["serde"] }
-thiserror.workspace = true
+rand               = { workspace = true }
+rspc               = { workspace = true, features = ["tauri"] }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+specta             = { workspace = true }
+strum              = { workspace = true, features = ["derive"] }
+thiserror          = { workspace = true }
+tokio              = { workspace = true, features = ["sync"] }
+tracing            = { workspace = true }
+uuid               = { workspace = true, features = ["serde"] }
 
-opener = { version = "0.6.1", features = ["reveal"] }
-tauri = { version = "=1.5.3", features = [
-	"macos-private-api",
-	"path-all",
-	"protocol-all",
-	"os-all",
-	"shell-all",
-	"dialog-all",
-	"linux-protocol-headers",
-	"updater",
-	"window-all",
-	"native-tls-vendored",
-	"tracing",
-] }
-tauri-plugin-window-state = { path = "../crates/tauri-plugin-window-state" }
-directories = "5.0.1"
+# Specific Desktop dependencies
+# WARNING: Do NOT enable default features, as that vendors dbus (see below)
+drag                           = { git = "https://github.com/spacedriveapp/drag-rs", rev = "157b2cd9" }
+opener                         = { version = "0.7.1", features = ["reveal"], default-features = false }
+specta-typescript              = "=0.0.7"
+tauri-plugin-clipboard-manager = "=2.0.1"
+tauri-plugin-cors-fetch        = { path = "../../../crates/tauri-plugin-cors-fetch" }
+tauri-plugin-deep-link         = "=2.0.1"
+tauri-plugin-dialog            = "=2.0.3"
+tauri-plugin-drag              = "2.0.0"
+tauri-plugin-http              = "=2.0.3"
+tauri-plugin-os                = "=2.0.1"
+tauri-plugin-shell             = "=2.0.2"
+tauri-plugin-updater           = "=2.0.2"
+
+# memory allocator
+mimalloc = { workspace = true }
+
+[dependencies.tauri]
+features = ["linux-libxdo", "macos-private-api", "native-tls-vendored", "unstable"]
+version  = "=2.0.6"
+
+[dependencies.tauri-specta]
+features = ["derive", "typescript"]
+git      = "https://github.com/spacedriveapp/tauri-specta"
+rev      = "8c85d40eb9"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# Spacedrive Sub-crates
 sd-desktop-linux = { path = "../crates/linux" }
-webkit2gtk = { version = "0.18.2", features = ["v2_2"] }
+
+# Specific Desktop dependencies
+# WARNING: dbus must NOT be vendored, as that breaks the app on Linux,X11,Nvidia
+dbus = { version = "0.9.7", features = ["stdfd"] }
+# https://github.com/tauri-apps/tauri/blob/tauri-v2.0.0/crates/tauri/Cargo.toml#L101
+webkit2gtk = { version = "=2.0.1", features = ["v2_40"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Spacedrive Sub-crates
 sd-desktop-macos = { path = "../crates/macos" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Spacedrive Sub-crates
 sd-desktop-windows = { path = "../crates/windows" }
-webview2-com = "0.19.1"
 
 [build-dependencies]
-tauri-build = "1.5.0"
+# Specific Desktop dependencies
+tauri-build = "=2.0.2"
 
 [features]
-default = ["ai-models", "custom-protocol"]
-ai-models = ["sd-core/ai"]
+ai-models       = ["sd-core/ai"]
 custom-protocol = ["tauri/custom-protocol"]
+default         = ["custom-protocol"]
+devtools        = ["tauri/devtools"]

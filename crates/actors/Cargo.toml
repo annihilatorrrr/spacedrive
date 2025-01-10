@@ -1,12 +1,15 @@
 [package]
-name = "sd-actors"
+name    = "sd-actors"
 version = "0.1.0"
-license.workspace = true
-edition.workspace = true
+
+edition.workspace    = true
+license.workspace    = true
 repository.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-futures.workspace = true
-tokio.workspace = true
+async-channel    = { workspace = true }
+async-trait      = { workspace = true }
+futures          = { workspace = true }
+pin-project-lite = { workspace = true }
+tokio            = { workspace = true }
+tracing          = { workspace = true }

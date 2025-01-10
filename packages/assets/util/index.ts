@@ -12,6 +12,8 @@ export const iconNames = Object.fromEntries(
 		.map((key) => [key, key]) // Map key to [key, key] format
 ) as Record<IconTypes, string>;
 
+export type IconName = keyof typeof iconNames;
+
 export const getIconByName = (name: IconTypes, isDark?: boolean) => {
 	if (!isDark) name = (name + '_Light') as IconTypes;
 	return icons[name];
@@ -52,13 +54,13 @@ export const getIcon = (
 		(extension && extension in icons
 			? extension
 			: // 2. If in light mode, check if the specific kind in light exists.
-			!isDark && lightKind in icons
-			? lightKind
-			: // 3. Check if a general kind icon exists.
-			kind in icons
-			? kind
-			: // 4. Default to the document (or document light) icon.
-			  document) as keyof typeof icons
+				!isDark && lightKind in icons
+				? lightKind
+				: // 3. Check if a general kind icon exists.
+					kind in icons
+					? kind
+					: // 4. Default to the document (or document light) icon.
+						document) as keyof typeof icons
 	];
 };
 

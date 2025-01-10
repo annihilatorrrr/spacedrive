@@ -1,5 +1,3 @@
-import '@fontsource/inter/variable.css';
-
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import duration from 'dayjs/plugin/duration';
@@ -10,16 +8,17 @@ import { RouterProvider, RouterProviderProps } from 'react-router-dom';
 import {
 	InteropProviderReact,
 	P2PContextProvider,
+	useBridgeMutation,
 	useBridgeSubscription,
 	useInvalidateQuery,
 	useLoadBackendFeatureFlags
 } from '@sd/client';
-import { toast, TooltipProvider } from '@sd/ui';
+import { dialogManager, toast, TooltipProvider } from '@sd/ui';
+import RequestAddDialog from '~/components/RequestAddDialog';
 
 import { createRoutes } from './app';
 import { SpacedropProvider } from './app/$libraryId/Spacedrop';
 import i18n from './app/I18n';
-import { useP2PErrorToast } from './app/p2p';
 import { Devtools } from './components/Devtools';
 import { WithPrismTheme } from './components/TextViewer/prism';
 import ErrorFallback, { BetterErrorBoundary } from './ErrorFallback';
@@ -29,7 +28,7 @@ import { RouterContext, RoutingContext } from './RoutingContext';
 export * from './app';
 export { ErrorPage } from './ErrorFallback';
 export * from './TabsContext';
-export * from './util/keybind';
+export * from './util/events';
 export * from './util/Platform';
 
 dayjs.extend(advancedFormat);
@@ -81,13 +80,28 @@ export function SpacedriveRouterProvider(props: {
 
 export function SpacedriveInterfaceRoot({ children }: PropsWithChildren) {
 	useLoadBackendFeatureFlags();
-	useP2PErrorToast();
 	useInvalidateQuery();
 	useTheme();
 
 	useBridgeSubscription(['notifications.listen'], {
 		onData({ data: { title, content, kind }, expires }) {
 			toast({ title, body: content }, { type: kind });
+		}
+	});
+
+	const userResponse = useBridgeMutation('cloud.userResponse');
+
+	useBridgeSubscription(['cloud.listenCloudServicesNotifications'], {
+		onData: (d) => {
+			console.log('Received cloud service notification', d);
+			switch (d.kind) {
+				case 'ReceivedJoinSyncGroupRequest':
+					dialogManager.create((dp) => <RequestAddDialog data={d.data} {...dp} />);
+					break;
+				default:
+					toast({ title: 'Cloud Service Notification', body: d.kind }, { type: 'info' });
+					break;
+			}
 		}
 	});
 

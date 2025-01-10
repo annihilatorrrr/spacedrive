@@ -8,7 +8,10 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{fs, io};
+use tokio::{
+	fs::{self, OpenOptions},
+	io::{self, AsyncWriteExt},
+};
 use tracing::error;
 use uuid::Uuid;
 
@@ -53,10 +56,12 @@ impl SpacedriveLocationMetadataFile {
 						#[cfg(debug_assertions)]
 						{
 							error!(
+								metadata_file_name = %metadata_file_name.display(),
+								?e,
 								"Failed to deserialize corrupted metadata file, \
-								we will remove it and create a new one; File: {}; Error: {e}",
-								metadata_file_name.display()
+								we will remove it and create a new one;",
 							);
+
 							fs::remove_file(&metadata_file_name).await.map_err(|e| {
 								LocationMetadataError::Delete(
 									e,
@@ -247,13 +252,27 @@ impl SpacedriveLocationMetadataFile {
 	}
 
 	async fn write_metadata(&self) -> Result<(), LocationMetadataError> {
-		fs::write(
-			&self.path,
-			serde_json::to_vec(&self.metadata)
-				.map_err(|e| LocationMetadataError::Serialize(e, self.path.clone()))?,
-		)
-		.await
-		.map_err(|e| LocationMetadataError::Write(e, self.path.clone()))
+		let mut file_options = OpenOptions::new();
+
+		// we want to write the file if it exists, otherwise create it
+		file_options.create(true).write(true);
+
+		#[cfg(target_os = "windows")]
+		{
+			use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+			file_options.attributes(FILE_ATTRIBUTE_HIDDEN.0);
+		}
+
+		let metadata_contents = serde_json::to_vec(&self.metadata)
+			.map_err(|e| LocationMetadataError::Serialize(e, self.path.clone()))?;
+
+		file_options
+			.open(&self.path)
+			.await
+			.map_err(|e| LocationMetadataError::Write(e, self.path.clone()))?
+			.write_all(&metadata_contents)
+			.await
+			.map_err(|e| LocationMetadataError::Write(e, self.path.clone()))
 	}
 }
 

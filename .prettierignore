@@ -25,10 +25,15 @@ apps/desktop/src/index.tsx
 apps/desktop/src/commands.ts
 
 # Import only file, which order is relevant
-interface/components/TextViewer/prism.tsx
+interface/components/TextViewer/prism-lazy.ts
 
 .next/
 .contentlayer/
 
 # Stops from constant package.json changes showing up in commits
 package*.json
+
+# Dont format locales json
+interface/locales
+
+scripts/utils/.tmp/*

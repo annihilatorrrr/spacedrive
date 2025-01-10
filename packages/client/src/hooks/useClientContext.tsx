@@ -1,16 +1,17 @@
+import { AlphaClient } from '@spacedrive/rspc-client';
+import { keepPreviousData } from '@tanstack/react-query';
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from 'react';
 
-import { NormalisedCache, useCache, useNodes } from '../cache';
-import { LibraryConfigWrapped } from '../core';
+import { LibraryConfigWrapped, Procedures } from '../core';
 import { valtioPersist } from '../lib';
-import { nonLibraryClient, useBridgeQuery } from '../rspc';
+import { useBridgeQuery } from '../rspc';
 
 // The name of the localStorage key for caching library data
-const libraryCacheLocalStorageKey = 'sd-library-list2'; // `2` is because the format of this underwent a breaking change when introducing normalised caching
+const libraryCacheLocalStorageKey = 'sd-library-list3'; // number is because the format of this underwent breaking changes
 
 export const useCachedLibraries = () => {
-	const result = useBridgeQuery(['library.list'], {
-		keepPreviousData: true,
+	const query = useBridgeQuery(['library.list'], {
+		placeholderData: keepPreviousData,
 		initialData: () => {
 			const cachedData = localStorage.getItem(libraryCacheLocalStorageKey);
 
@@ -24,38 +25,36 @@ export const useCachedLibraries = () => {
 			}
 
 			return undefined;
-		},
-		onSuccess: (data) => localStorage.setItem(libraryCacheLocalStorageKey, JSON.stringify(data))
+		}
 	});
-	useNodes(result.data?.nodes);
 
-	return {
-		...result,
-		data: useCache(result.data?.items)
-	};
+	useEffect(() => {
+		if ((query.data?.length ?? 0) > 0)
+			localStorage.setItem(libraryCacheLocalStorageKey, JSON.stringify(query.data));
+	}, [query.data]);
+
+	return query;
 };
 
-export async function getCachedLibraries(cache: NormalisedCache) {
+export async function getCachedLibraries(client: AlphaClient<Procedures>) {
 	const cachedData = localStorage.getItem(libraryCacheLocalStorageKey);
+
+	const libraries = client.query(['library.list']).then((result) => {
+		localStorage.setItem(libraryCacheLocalStorageKey, JSON.stringify(result));
+		return result;
+	});
 
 	if (cachedData) {
 		// If we fail to load cached data, it's fine
 		try {
 			const data = JSON.parse(cachedData);
-			cache.withNodes(data.nodes);
-			return cache.withCache(data.items) as LibraryConfigWrapped[];
+			return data as LibraryConfigWrapped[];
 		} catch (e) {
 			console.error("Error loading cached 'sd-library-list' data", e);
 		}
 	}
 
-	const result = await nonLibraryClient.query(['library.list']);
-	cache.withNodes(result.nodes);
-	const libraries = cache.withCache(result.items);
-
-	localStorage.setItem(libraryCacheLocalStorageKey, JSON.stringify(result));
-
-	return libraries;
+	return await libraries;
 }
 
 export interface ClientContext {
@@ -97,6 +96,7 @@ export const ClientContextProvider = ({
 	);
 };
 
+// million-ignore
 export const useClientContext = () => {
 	const ctx = useContext(ClientContext);
 

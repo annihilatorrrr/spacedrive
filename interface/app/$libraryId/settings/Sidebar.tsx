@@ -1,20 +1,23 @@
 import {
+	ArrowsClockwise,
 	Books,
-	ChartBar,
 	Cloud,
 	Database,
 	FlyingSaucer,
 	GearSix,
+	GlobeSimple,
 	HardDrive,
 	Key,
 	KeyReturn,
 	PaintBrush,
 	PuzzlePiece,
 	Receipt,
+	ShareNetwork,
 	ShieldCheck,
 	TagSimple,
 	User
 } from '@phosphor-icons/react';
+import clsx from 'clsx';
 import { useFeatureFlag } from '@sd/client';
 import { tw } from '@sd/ui';
 import { useLocale, useOperatingSystem } from '~/hooks';
@@ -22,17 +25,20 @@ import { usePlatform } from '~/util/Platform';
 
 import Icon from '../Layout/Sidebar/SidebarLayout/Icon';
 import SidebarLink from '../Layout/Sidebar/SidebarLayout/Link';
+import { useLayoutStore } from '../Layout/store';
 import { NavigationButtons } from '../TopBar/NavigationButtons';
 
-const Heading = tw.div`mb-1 ml-1 text-xs font-semibold text-gray-400`;
+const Heading = tw.div`mb-1 ml-1 text-xs font-semibold text-gray-400 font-plex tracking-wide`;
 const Section = tw.div`space-y-0.5`;
 
 export default () => {
-	const { platform } = usePlatform();
 	const os = useOperatingSystem();
+	const { platform } = usePlatform();
+	const { sidebar } = useLayoutStore();
 
 	// const isPairingEnabled = useFeatureFlag('p2pPairing');
 	const isBackupsEnabled = useFeatureFlag('backups');
+	// const cloudSync = useFeatureFlag('cloudSync');
 
 	const { t } = useLocale();
 
@@ -41,9 +47,12 @@ export default () => {
 			{platform === 'tauri' ? (
 				<div
 					data-tauri-drag-region={os === 'macOS'}
-					className="mb-3 h-3 w-full p-3 pl-[14px] pt-[11px]"
+					className={clsx(
+						'mb-3 flex h-3 w-full p-3 pl-[14px] pt-[11px]',
+						sidebar.collapsed && os === 'macOS' && 'justify-end'
+					)}
 				>
-					<NavigationButtons />
+					{os !== 'windows' && <NavigationButtons />}
 				</div>
 			) : (
 				<div className="h-3" />
@@ -56,10 +65,6 @@ export default () => {
 						<Icon component={GearSix} />
 						{t('general')}
 					</SidebarLink>
-					{/* <SidebarLink to="client/usage">
-						<Icon component={ChartBar} />
-						{t('usage')}
-					</SidebarLink> */}
 					<SidebarLink to="client/account">
 						<Icon component={User} />
 						{t('account')}
@@ -75,6 +80,10 @@ export default () => {
 					<SidebarLink to="client/appearance">
 						<Icon component={PaintBrush} />
 						{t('appearance')}
+					</SidebarLink>
+					<SidebarLink to="client/network">
+						<Icon component={GlobeSimple} />
+						{t('network')}
 					</SidebarLink>
 					<SidebarLink to="client/backups" disabled={!isBackupsEnabled}>
 						<Icon component={Database} />
@@ -95,10 +104,14 @@ export default () => {
 						<Icon component={GearSix} />
 						{t('general')}
 					</SidebarLink>
-					{/* <SidebarLink to="library/nodes" disabled={!isPairingEnabled}>
+					<SidebarLink to="library/volumes">
 						<Icon component={ShareNetwork} />
-						Nodes
-					</SidebarLink> */}
+						Volumes
+					</SidebarLink>
+					<SidebarLink to="library/sync">
+						<Icon component={ArrowsClockwise} />
+						{t('sync')}
+					</SidebarLink>
 					<SidebarLink to="library/locations">
 						<Icon component={HardDrive} />
 						{t('locations')}
@@ -111,6 +124,7 @@ export default () => {
 						<Icon component={MagnifyingGlass} />
 						Saved Searches
 					</SidebarLink> */}
+
 					<SidebarLink disabled to="library/clouds">
 						<Icon component={Cloud} />
 						{t('clouds')}
@@ -130,14 +144,6 @@ export default () => {
 						<Icon component={Receipt} />
 						{t('changelog')}
 					</SidebarLink>
-					{/* <SidebarLink to="resources/dependencies">
-						<Icon component={Graph} />
-						Dependencies
-					</SidebarLink>
-					<SidebarLink to="resources/support">
-						<Icon component={Heart} />
-						Support
-					</SidebarLink> */}
 				</Section>
 			</div>
 		</div>

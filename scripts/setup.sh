@@ -135,14 +135,15 @@ case "$(uname)" in
       echo
     fi
     ;;
-  "Linux") # https://github.com/tauri-apps/tauri-docs/blob/dev/docs/guides/getting-started/prerequisites.md#setting-up-linux
+  "Linux")
+    # https://github.com/tauri-apps/tauri-docs/blob/dev/docs/guides/getting-started/prerequisites.md#setting-up-linux
     if has apt-get; then
       echo "Detected apt!"
       echo "Installing dependencies with apt..."
 
       # Tauri dependencies
       set -- build-essential curl wget file openssl libssl-dev libgtk-3-dev librsvg2-dev \
-        libwebkit2gtk-4.0-dev libayatana-appindicator3-dev
+        libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev libdbus-1-dev
 
       # Webkit2gtk requires gstreamer plugins for video playback to work
       set -- "$@" gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -160,7 +161,7 @@ case "$(uname)" in
       echo "Installing dependencies with pacman..."
 
       # Tauri dependencies
-      set -- base-devel curl wget file openssl gtk3 librsvg webkit2gtk libayatana-appindicator
+      set -- base-devel curl wget file openssl gtk3 librsvg webkit2gtk-4.1 libayatana-appindicator xdotool dbus
 
       # Webkit2gtk requires gstreamer plugins for video playback to work
       set -- "$@" gst-plugins-base gst-plugins-good gst-plugins-ugly
@@ -183,15 +184,8 @@ case "$(uname)" in
           'https://github.com/spacedriveapp/spacedrive/issues'
       fi
 
-      # For Fedora 36 and below, and all Enterprise Linux Distributions, you need to install webkit2gtk3-devel instead of webkit2gtk4.0-devel
-      if ! { sudo dnf install webkit2gtk4.0-devel || sudo dnf install webkit2gtk3-devel; }; then
-        err 'We were unable to install the webkit2gtk4.0-devel/webkit2gtk3-devel package.' \
-          'Please open an issue if you feel that this is incorrect.' \
-          'https://github.com/spacedriveapp/spacedrive/issues'
-      fi
-
       # Tauri dependencies
-      set -- openssl openssl-dev curl wget file libappindicator-gtk3-devel librsvg2-devel
+      set -- openssl webkit2gtk4.1-devel openssl-devel curl wget file libappindicator-gtk3-devel librsvg2-devel libxdo-devel dbus-devel
 
       # Webkit2gtk requires gstreamer plugins for video playback to work
       set -- "$@" gstreamer1-devel gstreamer1-plugins-base-devel gstreamer1-plugins-good \
@@ -211,7 +205,7 @@ case "$(uname)" in
 
       # Tauri dependencies
       set -- build-base curl wget file openssl-dev gtk+3.0-dev librsvg-dev \
-        webkit2gtk-dev libayatana-indicator-dev
+        webkit2gtk-4.1-dev libayatana-indicator-dev xdotool-dev dbus-dev
 
       # Webkit2gtk requires gstreamer plugins for video playback to work
       set -- "$@" gst-plugins-base-dev gst-plugins-good gst-plugins-ugly
@@ -223,6 +217,26 @@ case "$(uname)" in
       set -- "$@" vips
 
       sudo apk add "$@"
+    elif has eopkg; then
+      echo "Detected eopkg!"
+      echo "Installing dependencies with eopkg..."
+      echo "Solus support is experimental" >&2
+
+      # Tauri dependencies
+      set -- curl wget file openssl openssl-devel libgtk-3-devel librsvg-devel \
+        libwebkit-gtk41-devel libayatana-appindicator-devel xdotool-devel dbus-devel
+
+      # Webkit2gtk requires gstreamer plugins for video playback to work
+      set -- "$@" gstreamer-1.0-plugins-good gstreamer-1.0-plugins-ugly gstreamer-1.0-devel gstreamer-1.0-plugins-base-devel
+
+      # C/C++ build dependencies, required to build some *-sys crates
+      set -- "$@" llvm-devel llvm-clang-devel llvm-clang nasm perl
+
+      # React dependencies
+      set -- "$@" libvips
+
+      sudo eopkg it -c system.devel -y
+      sudo eopkg it "$@" -y
     else
       if has lsb_release; then
         _distro="'$(lsb_release -s -d)' "

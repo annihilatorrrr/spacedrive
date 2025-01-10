@@ -1,43 +1,42 @@
-use crate::{
-	api::locations::ExplorerItem,
-	library::Library,
-	object::{
-		cas::generate_cas_id,
-		media::thumbnail::{get_ephemeral_thumb_key, BatchToProcess, GenerateThumbnailArgs},
+use crate::{api::locations::ExplorerItem, context::NodeContext, library::Library, Node};
+
+use sd_core_file_path_helper::{path_is_hidden, MetadataExt};
+use sd_core_heavy_lifting::{
+	file_identifier::generate_cas_id,
+	media_processor::{
+		self, get_thumbnails_directory, thumbnailer::NewThumbnailReporter, GenerateThumbnailArgs,
+		NewThumbnailsReporter, ThumbKey,
 	},
-	Node,
+};
+use sd_core_indexer_rules::{
+	seed::{NO_HIDDEN, NO_SYSTEM_FILES},
+	IndexerRule, IndexerRuler, RulerDecision,
 };
 
-use futures::Stream;
-use itertools::Either;
 use sd_file_ext::{extensions::Extension, kind::ObjectKind};
-use sd_file_path_helper::{path_is_hidden, MetadataExt};
 use sd_prisma::prisma::location;
 use sd_utils::{chain_optional_iter, error::FileIOError};
 
 use std::{
 	collections::HashMap,
 	io::ErrorKind,
+	ops::Deref,
 	path::{Path, PathBuf},
 	sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
+use futures::Stream;
+use itertools::{Either, Itertools};
 use rspc::ErrorCode;
 use serde::Serialize;
 use specta::Type;
 use thiserror::Error;
-use tokio::{io, sync::mpsc, task::JoinError};
+use tokio::{io, spawn, sync::mpsc, task::JoinError};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, span, warn, Level};
+use tracing::{debug, error, span, warn, Level};
 
-use super::{
-	indexer::rules::{
-		seed::{no_hidden, no_os_protected},
-		IndexerRule, RuleKind,
-	},
-	normalize_path,
-};
+use super::normalize_path;
 
 #[derive(Debug, Error)]
 pub enum NonIndexedLocationError {
@@ -64,12 +63,12 @@ impl<T> From<mpsc::error::SendError<T>> for NonIndexedLocationError {
 }
 
 impl From<NonIndexedLocationError> for rspc::Error {
-	fn from(err: NonIndexedLocationError) -> Self {
-		match err {
+	fn from(e: NonIndexedLocationError) -> Self {
+		match e {
 			NonIndexedLocationError::NotFound(_) => {
-				rspc::Error::with_cause(ErrorCode::NotFound, err.to_string(), err)
+				rspc::Error::with_cause(ErrorCode::NotFound, e.to_string(), e)
 			}
-			_ => rspc::Error::with_cause(ErrorCode::InternalServerError, err.to_string(), err),
+			_ => rspc::Error::with_cause(ErrorCode::InternalServerError, e.to_string(), e),
 		}
 	}
 }
@@ -121,12 +120,12 @@ pub async fn walk(
 	let tx2 = tx.clone();
 
 	// We wanna process and let the caller use the stream.
-	let task = tokio::spawn(async move {
+	let task = spawn(async move {
 		let path = &path;
-		let rules = chain_optional_iter(
-			[IndexerRule::from(no_os_protected())],
-			[(!with_hidden_files).then(|| IndexerRule::from(no_hidden()))],
-		);
+		let indexer_ruler = IndexerRuler::new(chain_optional_iter(
+			[IndexerRule::from(NO_SYSTEM_FILES.deref())],
+			[(!with_hidden_files).then(|| IndexerRule::from(NO_HIDDEN.deref()))],
+		));
 
 		let mut thumbnails_to_generate = vec![];
 		// Generating thumbnails for PDFs is kinda slow, so we're leaving them for last in the batch
@@ -145,21 +144,21 @@ pub async fn walk(
 				}
 			};
 
-			match IndexerRule::apply_all(&rules, &entry_path).await {
-				Ok(rule_results) => {
-					// No OS Protected and No Hidden rules, must always be from this kind, should panic otherwise
-					if rule_results[&RuleKind::RejectFilesByGlob]
-						.iter()
-						.any(|reject| !reject)
-					{
-						continue;
-					}
+			match indexer_ruler
+				.evaluate_path(&entry_path, &entry.metadata)
+				.await
+			{
+				Ok(RulerDecision::Accept) => { /* Everything is awesome! */ }
+
+				Ok(RulerDecision::Reject) => {
+					continue;
 				}
+
 				Err(e) => {
 					tx.send(Err(Either::Left(e.into()))).await?;
 					continue;
 				}
-			};
+			}
 
 			if entry.metadata.is_dir() {
 				directories.push((entry_path, name, entry.metadata));
@@ -170,7 +169,7 @@ pub async fn walk(
 					.file_stem()
 					.and_then(|s| s.to_str().map(str::to_string))
 				else {
-					warn!("Failed to extract name from path: {}", &entry_path);
+					warn!(%entry_path, "Failed to extract name from path;");
 					continue;
 				};
 
@@ -199,7 +198,7 @@ pub async fn walk(
 					}
 				};
 
-				let thumbnail_key = if should_generate_thumbnail {
+				let (thumbnail_key, has_created_thumbnail) = if should_generate_thumbnail {
 					if let Ok(cas_id) =
 						generate_cas_id(&path, entry.metadata.len())
 							.await
@@ -222,12 +221,17 @@ pub async fn walk(
 							));
 						}
 
-						Some(get_ephemeral_thumb_key(&cas_id))
+						let thumb_exists = node
+							.ephemeral_thumbnail_exists(&cas_id)
+							.await
+							.map_err(NonIndexedLocationError::from)?;
+
+						(Some(ThumbKey::new_ephemeral(cas_id)), thumb_exists)
 					} else {
-						None
+						(None, false)
 					}
 				} else {
-					None
+					(None, false)
 				};
 
 				tx.send(Ok(ExplorerItem::NonIndexedPath {
@@ -243,6 +247,7 @@ pub async fn walk(
 						date_modified: entry.metadata.modified_or_now().into(),
 						size_in_bytes_bytes: entry.metadata.len().to_be_bytes().to_vec(),
 					},
+					has_created_thumbnail,
 				}))
 				.await?;
 			}
@@ -250,13 +255,35 @@ pub async fn walk(
 
 		thumbnails_to_generate.extend(document_thumbnails_to_generate);
 
-		node.thumbnailer
-			.new_ephemeral_thumbnails_batch(BatchToProcess::new(
-				thumbnails_to_generate,
-				false,
-				false,
-			))
-			.await;
+		let thumbnails_directory = Arc::new(get_thumbnails_directory(node.config.data_directory()));
+		let reporter: Arc<dyn NewThumbnailReporter> = Arc::new(NewThumbnailsReporter {
+			ctx: NodeContext {
+				node: Arc::clone(&node),
+				library: Arc::clone(&library),
+			},
+		});
+
+		if node
+			.task_system
+			.dispatch_many(
+				thumbnails_to_generate
+					.into_iter()
+					.chunks(10)
+					.into_iter()
+					.map(|chunk| {
+						media_processor::Thumbnailer::new_ephemeral(
+							Arc::clone(&thumbnails_directory),
+							chunk.collect(),
+							Arc::clone(&reporter),
+						)
+					})
+					.collect::<Vec<_>>(),
+			)
+			.await
+			.is_err()
+		{
+			debug!("Task system shutting down");
+		}
 
 		let mut locations = library
 			.db
@@ -296,6 +323,7 @@ pub async fn walk(
 						date_modified: metadata.modified_or_now().into(),
 						size_in_bytes_bytes: metadata.len().to_be_bytes().to_vec(),
 					},
+					has_created_thumbnail: false,
 				}))
 				.await?;
 			}
@@ -304,13 +332,13 @@ pub async fn walk(
 		Ok::<_, NonIndexedLocationError>(())
 	});
 
-	tokio::spawn(async move {
+	spawn(async move {
 		match task.await {
 			Ok(Ok(())) => {}
 			Ok(Err(e)) => {
 				let _ = tx2.send(Err(Either::Left(e.into()))).await;
 			}
-			Err(e) => error!("error joining tokio task: {}", e),
+			Err(e) => error!(?e, "error joining tokio task"),
 		}
 	});
 
@@ -348,7 +376,9 @@ impl Entry {
 ///
 /// From my M1 Macbook Pro this:
 ///  - takes 11ms per 10 000 files
-///  and
+///
+/// and
+///
 ///  - consumes 0.16MB of RAM per 10 000 entries.
 ///
 /// The reason we collect these all up is so we can apply ordering, and then begin streaming the data as it's processed to the frontend.

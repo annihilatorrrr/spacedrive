@@ -1,9 +1,9 @@
 import clsx from 'clsx';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import {
 	ClientContextProvider,
-	initPlausible,
+	configureAnalyticsProperties,
 	LibraryContextProvider,
 	useBridgeQuery,
 	useClientContext,
@@ -15,6 +15,8 @@ import { useRootContext } from '~/app/RootContext';
 import { LibraryIdParamsSchema } from '~/app/route-schemas';
 import ErrorFallback, { BetterErrorBoundary } from '~/ErrorFallback';
 import {
+	useDeeplinkEventHandler,
+	useFileDropEventHandler,
 	useKeybindEventHandler,
 	useOperatingSystem,
 	useRedirectToNewLocation,
@@ -26,21 +28,26 @@ import { usePlatform } from '~/util/Platform';
 
 import { DragOverlay } from '../Explorer/DragOverlay';
 import { QuickPreviewContextProvider } from '../Explorer/QuickPreview/Context';
+import CMDK from './CMDK';
 import { LayoutContext } from './Context';
 import { DndContext } from './DndContext';
 import Sidebar from './Sidebar';
 
 const Layout = () => {
+	useRedirectToNewLocation();
+
 	const { libraries, library } = useClientContext();
 	const os = useOperatingSystem();
 	const showControls = useShowControls();
 	const windowState = useWindowState();
 
 	useKeybindEventHandler(library?.uuid);
+	useDeeplinkEventHandler();
+	useFileDropEventHandler(library?.uuid);
+
+	window.useDragAndDrop();
 
 	const layoutRef = useRef<HTMLDivElement>(null);
-
-	useRedirectToNewLocation();
 
 	const ctxValue = useMemo(() => ({ ref: layoutRef }), [layoutRef]);
 
@@ -60,7 +67,7 @@ const Layout = () => {
 				ref={layoutRef}
 				className={clsx(
 					// App level styles
-					'flex h-screen cursor-default select-none overflow-hidden text-ink',
+					'flex h-screen select-none overflow-hidden text-ink',
 					os === 'macOS' && [
 						'has-blur-effects',
 						!windowState.isFullScreen &&
@@ -88,6 +95,7 @@ const Layout = () => {
 											fallback={<div className="h-screen w-screen bg-app" />}
 										>
 											<Outlet />
+											<CMDK />
 											<DragOverlay />
 										</Suspense>
 									</LibraryContextProvider>
@@ -142,20 +150,20 @@ function usePlausible() {
 	const plausibleEvent = usePlausibleEvent();
 
 	useEffect(() => {
-		initPlausible({
+		configureAnalyticsProperties({
 			buildInfo,
 			platformType: platform === 'tauri' ? 'desktop' : 'web'
 		});
 	}, [platform, buildInfo]);
 
 	useEffect(() => {
-		const interval = setInterval(() => {
-			plausibleEvent({
-				event: {
-					type: 'ping'
-				}
-			});
-		}, 270 * 1000);
+		const interval = setInterval(
+			() => {
+				// ping every 10 minutes -- this just tells us that Spacedrive is running and helps us gauge the amount of active users we have.
+				plausibleEvent({ event: { type: 'ping' } });
+			},
+			10 * 60 * 1_000
+		);
 
 		return () => clearInterval(interval);
 	}, [plausibleEvent]);

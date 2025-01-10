@@ -2,17 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useDebouncedCallback } from 'use-debounce';
 import { proxy, snapshot, subscribe, useSnapshot } from 'valtio';
 import { z } from 'zod';
-import type {
-	ExplorerItem,
-	ExplorerLayout,
-	ExplorerSettings,
-	FilePath,
-	Location,
-	NodeState,
-	Tag
+import {
+	ObjectKindEnum,
+	type ExplorerItem,
+	type ExplorerLayout,
+	type ExplorerSettings,
+	type FilePath,
+	type Location,
+	type NodeState,
+	type Ordering,
+	type OrderingKeys,
+	type Tag
 } from '@sd/client';
 
-import { createDefaultExplorerSettings, type Ordering, type OrderingKeys } from './store';
+import { createDefaultExplorerSettings } from './store';
 import { uniqueId } from './util';
 
 export type ExplorerParent =
@@ -40,6 +43,7 @@ export interface UseExplorerProps<TOrder extends Ordering> {
 	parent?: ExplorerParent;
 	loadMore?: () => void;
 	isFetchingNextPage?: boolean;
+	isFetching?: boolean;
 	isLoadingPreferences?: boolean;
 	scrollRef?: RefObject<HTMLDivElement>;
 	overscan?: number;
@@ -47,7 +51,7 @@ export interface UseExplorerProps<TOrder extends Ordering> {
 	 * @defaultValue `true`
 	 */
 	selectable?: boolean;
-	settings: ReturnType<typeof useExplorerSettings<TOrder>>;
+	settings: ReturnType<typeof useExplorerSettings<TOrder, any>>;
 	/**
 	 * @defaultValue `true`
 	 */
@@ -88,29 +92,26 @@ export function useExplorer<TOrder extends Ordering>({
 
 export type UseExplorer<TOrder extends Ordering> = ReturnType<typeof useExplorer<TOrder>>;
 
-export function useExplorerSettings<TOrder extends Ordering>({
+export function useExplorerSettings<TOrder extends Ordering, T>({
 	settings,
 	onSettingsChanged,
 	orderingKeys,
-	location
+	data
 }: {
 	settings: ReturnType<typeof createDefaultExplorerSettings<TOrder>>;
-	onSettingsChanged?: (settings: ExplorerSettings<TOrder>, location: Location) => void;
+	onSettingsChanged?: (settings: ExplorerSettings<TOrder>, data: T) => void;
 	orderingKeys?: z.ZodUnion<
 		[z.ZodLiteral<OrderingKeys<TOrder>>, ...z.ZodLiteral<OrderingKeys<TOrder>>[]]
 	>;
-	location?: Location | null;
+	data?: T | null;
 }) {
-	const [store] = useState(() => proxy(settings));
+	const store = useMemo(() => proxy(settings), [settings]);
 
-	const updateSettings = useDebouncedCallback(
-		(settings: ExplorerSettings<TOrder>, location: Location) => {
-			onSettingsChanged?.(settings, location);
-		},
-		500
-	);
+	const updateSettings = useDebouncedCallback((settings: ExplorerSettings<TOrder>, data: T) => {
+		onSettingsChanged?.(settings, data);
+	}, 500);
 
-	useEffect(() => updateSettings.flush(), [location, updateSettings]);
+	useEffect(() => updateSettings.flush(), [data, updateSettings]);
 
 	useEffect(() => {
 		if (updateSettings.isPending()) return;
@@ -118,22 +119,28 @@ export function useExplorerSettings<TOrder extends Ordering>({
 	}, [settings, store, updateSettings]);
 
 	useEffect(() => {
-		if (!onSettingsChanged || !location) return;
+		if (!onSettingsChanged || !data) return;
 		const unsubscribe = subscribe(store, () => {
-			updateSettings(snapshot(store) as ExplorerSettings<TOrder>, location);
+			updateSettings(snapshot(store) as ExplorerSettings<TOrder>, data);
 		});
 		return () => unsubscribe();
-	}, [store, updateSettings, location, onSettingsChanged]);
+	}, [store, updateSettings, data, onSettingsChanged]);
 
 	return {
 		useSettingsSnapshot: () => useSnapshot(store),
+		useLayoutSearchFilters: () => {
+			const explorerSettingsSnapshot = useSnapshot(store);
+			return explorerSettingsSnapshot.layoutMode === 'media'
+				? [{ object: { kind: { in: [ObjectKindEnum.Image, ObjectKindEnum.Video] } } }]
+				: [];
+		},
 		settingsStore: store,
 		orderingKeys
 	};
 }
 
-export type UseExplorerSettings<TOrder extends Ordering> = ReturnType<
-	typeof useExplorerSettings<TOrder>
+export type UseExplorerSettings<TOrder extends Ordering, T> = ReturnType<
+	typeof useExplorerSettings<TOrder, T>
 >;
 
 function useSelectedItems(items: ExplorerItem[] | null) {
@@ -142,65 +149,75 @@ function useSelectedItems(items: ExplorerItem[] | null) {
 	const itemHashesWeakMap = useRef(new WeakMap<ExplorerItem, string>());
 
 	// Store hashes of items instead as objects are unique by reference but we
-	// still need to differentate between item variants
-	const [selectedItemHashes, setSelectedItemHashes] = useState(() => ({
-		value: new Set<string>()
-	}));
-
-	const updateHashes = useCallback(
-		() => setSelectedItemHashes((h) => ({ ...h })),
-		[setSelectedItemHashes]
-	);
+	// still need to differentiate between item variants
+	const [selectedItemHashes, setSelectedItemHashes] = useState(() => new Set<string>());
 
 	const itemsMap = useMemo(
 		() =>
-			(items ?? []).reduce((items, item) => {
+			(items ?? []).reduce((items, item, i) => {
 				const hash = itemHashesWeakMap.current.get(item) ?? uniqueId(item);
 				itemHashesWeakMap.current.set(item, hash);
-				items.set(hash, item);
+				items.set(hash, { index: i, data: item });
 				return items;
-			}, new Map<string, ExplorerItem>()),
+			}, new Map<string, { index: number; data: ExplorerItem }>()),
 		[items]
 	);
 
 	const selectedItems = useMemo(
 		() =>
-			[...selectedItemHashes.value].reduce((items, hash) => {
+			[...selectedItemHashes].reduce((items, hash) => {
 				const item = itemsMap.get(hash);
-				if (item) items.add(item);
+				if (item) items.add(item.data);
 				return items;
 			}, new Set<ExplorerItem>()),
 		[itemsMap, selectedItemHashes]
 	);
 
+	const getItemUniqueId = useCallback(
+		(item: ExplorerItem) => itemHashesWeakMap.current.get(item) ?? uniqueId(item),
+		[]
+	);
+
 	return {
+		itemsMap,
 		selectedItems,
 		selectedItemHashes,
+		getItemUniqueId,
 		addSelectedItem: useCallback(
-			(item: ExplorerItem) => {
-				selectedItemHashes.value.add(uniqueId(item));
-				updateHashes();
+			(item: ExplorerItem | ExplorerItem[]) => {
+				const items = Array.isArray(item) ? item : [item];
+
+				setSelectedItemHashes((oldHashes) => {
+					const newHashes = new Set(oldHashes);
+					for (const it of items) newHashes.add(getItemUniqueId(it));
+					return newHashes;
+				});
 			},
-			[selectedItemHashes.value, updateHashes]
+			[getItemUniqueId]
 		),
 		removeSelectedItem: useCallback(
-			(item: ExplorerItem) => {
-				selectedItemHashes.value.delete(uniqueId(item));
-				updateHashes();
+			(item: ExplorerItem | ExplorerItem[]) => {
+				const items = Array.isArray(item) ? item : [item];
+				setSelectedItemHashes((oldHashes) => {
+					const newHashes = new Set(oldHashes);
+					for (const it of items) newHashes.delete(getItemUniqueId(it));
+					return newHashes;
+				});
 			},
-			[selectedItemHashes.value, updateHashes]
+			[getItemUniqueId]
 		),
 		resetSelectedItems: useCallback(
 			(items?: ExplorerItem[]) => {
-				selectedItemHashes.value.clear();
-				items?.forEach((item) => selectedItemHashes.value.add(uniqueId(item)));
-				updateHashes();
+				if (items) {
+					const newHashes = new Set<string>();
+					for (const it of items) newHashes.add(getItemUniqueId(it));
+					setSelectedItemHashes(newHashes);
+				} else {
+					setSelectedItemHashes(new Set());
+				}
 			},
-			[selectedItemHashes.value, updateHashes]
+			[getItemUniqueId]
 		),
-		isItemSelected: useCallback(
-			(item: ExplorerItem) => selectedItems.has(item),
-			[selectedItems]
-		)
+		isItemSelected: (item: ExplorerItem) => selectedItems.has(item)
 	};
 }

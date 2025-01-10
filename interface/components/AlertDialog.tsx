@@ -38,11 +38,11 @@ const AlertDialog = (props: Props) => {
 						<Button
 							type="button"
 							onClick={() => {
-								props.value && navigator.clipboard.writeText(props.value);
+								if (props.value) navigator.clipboard.writeText(props.value);
 							}}
 							size="icon"
 						>
-							<Clipboard className="h-4 w-4" />
+							<Clipboard className="size-4" />
 						</Button>
 					}
 				/>

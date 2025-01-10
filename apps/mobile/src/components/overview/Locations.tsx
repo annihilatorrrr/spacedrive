@@ -2,9 +2,9 @@ import { useNavigation } from '@react-navigation/native';
 import React, { useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
-import { useCache, useLibraryQuery, useNodes } from '@sd/client';
+import { useLibraryQuery } from '@sd/client';
 import { tw, twStyle } from '~/lib/tailwind';
-import { BrowseStackScreenProps } from '~/navigation/tabs/BrowseStack';
+import { OverviewStackScreenProps } from '~/navigation/tabs/OverviewStack';
 
 import Fade from '../layout/Fade';
 import { ModalRef } from '../layout/Modal';
@@ -15,22 +15,21 @@ import OverviewSection from './OverviewSection';
 import StatCard from './StatCard';
 
 const Locations = () => {
-	const navigation = useNavigation<BrowseStackScreenProps<'Browse'>['navigation']>();
+	const navigation = useNavigation<OverviewStackScreenProps<'Overview'>['navigation']>();
 	const modalRef = useRef<ModalRef>(null);
 
 	const locationsQuery = useLibraryQuery(['locations.list']);
-	useNodes(locationsQuery.data?.nodes);
-	const locations = useCache(locationsQuery.data?.items);
+	const locations = locationsQuery.data;
 
 	return (
 		<>
 			<OverviewSection title="Locations" count={locations?.length}>
 				<View style={tw`flex-row items-center`}>
-					<Fade height={'100%'} width={30} color="mobile-screen">
+					<Fade height={'100%'} width={30} color="black">
 						<FlatList
 							horizontal
 							data={locations}
-							contentContainerStyle={tw`px-7`}
+							contentContainerStyle={tw`px-6`}
 							showsHorizontalScrollIndicator={false}
 							keyExtractor={(location) => location.id.toString()}
 							ItemSeparatorComponent={() => <View style={tw`w-2`} />}
@@ -60,7 +59,8 @@ const Locations = () => {
 							renderItem={({ item }) => (
 								<Pressable
 									onPress={() =>
-										navigation.navigate('BrowseStack', {
+										navigation.jumpTo('BrowseStack', {
+											initial: false,
 											screen: 'Location',
 											params: { id: item.id }
 										})
@@ -68,6 +68,7 @@ const Locations = () => {
 								>
 									<StatCard
 										connectionType={null}
+										type="location"
 										totalSpace={item.size_in_bytes || [0]}
 										name={item.name || ''}
 										color="#0362FF"

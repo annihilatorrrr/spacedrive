@@ -1,11 +1,14 @@
+use std::collections::HashSet;
+
 use crate::{
 	invalidate_query,
 	node::config::{P2PDiscoveryState, Port},
 };
 
-use sd_prisma::prisma::{instance, location};
+use sd_prisma::prisma::{device, location};
 
 use rspc::{alpha::AlphaRouter, ErrorCode};
+use sd_utils::uuid_to_bytes;
 use serde::Deserialize;
 use specta::Type;
 use tracing::error;
@@ -19,10 +22,13 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 			#[derive(Deserialize, Type)]
 			pub struct ChangeNodeNameArgs {
 				pub name: Option<String>,
-				pub p2p_ipv4_port: Option<Port>,
-				pub p2p_ipv6_port: Option<Port>,
+				pub p2p_port: Option<Port>,
+				pub p2p_disabled: Option<bool>,
+				pub p2p_ipv6_disabled: Option<bool>,
+				pub p2p_relay_disabled: Option<bool>,
 				pub p2p_discovery: Option<P2PDiscoveryState>,
-				pub image_labeler_version: Option<String>,
+				pub p2p_remote_access: Option<bool>,
+				pub p2p_manual_peers: Option<HashSet<String>>,
 			}
 			R.mutation(|node, args: ChangeNodeNameArgs| async move {
 				if let Some(name) = &args.name {
@@ -34,50 +40,37 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 					}
 				}
 
-				#[cfg(feature = "ai")]
-				let mut new_model = None;
-
 				node.config
 					.write(|config| {
 						if let Some(name) = args.name {
 							config.name = name;
 						}
 
-						if let Some(port) = args.p2p_ipv4_port {
-							config.p2p_ipv4_port = port;
+						if let Some(port) = args.p2p_port {
+							config.p2p.port = port;
 						};
-						if let Some(port) = args.p2p_ipv6_port {
-							config.p2p_ipv6_port = port;
+						if let Some(enabled) = args.p2p_disabled {
+							config.p2p.disabled = enabled;
 						};
-						if let Some(v) = args.p2p_discovery {
-							config.p2p_discovery = v;
+						if let Some(enabled) = args.p2p_ipv6_disabled {
+							config.p2p.disable_ipv6 = enabled;
 						};
-
-						#[cfg(feature = "ai")]
-						if let Some(version) = args.image_labeler_version {
-							if config
-								.image_labeler_version
-								.as_ref()
-								.map(|node_version| version != *node_version)
-								.unwrap_or(true)
-							{
-								new_model = sd_ai::image_labeler::YoloV8::model(Some(&version))
-									.map_err(|e| {
-										error!(
-											"Failed to crate image_detection model: '{}'; Error: {e:#?}",
-											&version,
-										);
-									})
-									.ok();
-								if new_model.is_some() {
-									config.image_labeler_version = Some(version);
-								}
-							}
-						}
+						if let Some(enabled) = args.p2p_relay_disabled {
+							config.p2p.disable_relay = enabled;
+						};
+						if let Some(discovery) = args.p2p_discovery {
+							config.p2p.discovery = discovery;
+						};
+						if let Some(remote_access) = args.p2p_remote_access {
+							config.p2p.enable_remote_access = remote_access;
+						};
+						if let Some(manual_peers) = args.p2p_manual_peers {
+							config.p2p.manual_peers = manual_peers;
+						};
 					})
 					.await
-					.map_err(|err| {
-						error!("Failed to write config: {}", err);
+					.map_err(|e| {
+						error!(?e, "Failed to write config;");
 						rspc::Error::new(
 							ErrorCode::InternalServerError,
 							"error updating config".into(),
@@ -89,43 +82,6 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 
 				invalidate_query!(node; node, "nodeState");
 
-				#[cfg(feature = "ai")]
-				{
-					use super::notifications::{NotificationData, NotificationKind};
-
-					if let Some(model) = new_model {
-						let version = model.version().to_string();
-						tokio::spawn(async move {
-							let notification =
-								if let Some(image_labeller) = node.image_labeller.as_ref() {
-									if let Err(e) = image_labeller.change_model(model).await {
-										NotificationData {
-											title: String::from(
-												"Failed to change image detection model",
-											),
-											content: format!("Error: {e}"),
-											kind: NotificationKind::Error,
-										}
-									} else {
-										NotificationData {
-											title: String::from("Model download completed"),
-											content: format!("Sucessfuly loaded model: {version}"),
-											kind: NotificationKind::Success,
-										}
-									}
-								} else {
-									NotificationData {
-									title: String::from("Failed to change image detection model"),
-									content: "The AI system is disabled due to a previous error. Contact support for help.".to_string(),
-									kind: NotificationKind::Success,
-								}
-								};
-
-							node.emit_notification(notification, None).await;
-						});
-					}
-				}
-
 				Ok(())
 			})
 		})
@@ -133,27 +89,18 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 		.procedure("listLocations", {
 			R.with2(library())
 				// TODO: I don't like this. `node_id` should probs be a machine hash or something cause `node_id` is dynamic in the context of P2P and what does it mean for removable media to be owned by a node?
-				.query(|(_, library), node_id: Option<Uuid>| async move {
-					// Be aware multiple instances can exist on a single node. This is generally an edge case but it's possible.
-					let instances = library
-						.db
-						.instance()
-						.find_many(vec![node_id
-							.map(|id| instance::node_id::equals(id.as_bytes().to_vec()))
-							.unwrap_or(instance::id::equals(
-								library.config().await.instance_id,
-							))])
-						.exec()
-						.await?;
-
+				.query(|(_, library), device_pub_id: Option<Uuid>| async move {
 					Ok(library
 						.db
 						.location()
 						.find_many(
-							instances
-								.into_iter()
-								.map(|i| location::instance_id::equals(Some(i.id)))
-								.collect(),
+							device_pub_id
+								.map(|id| {
+									vec![location::device::is(vec![device::pub_id::equals(
+										uuid_to_bytes(&id),
+									)])]
+								})
+								.unwrap_or_default(),
 						)
 						.exec()
 						.await?
@@ -165,24 +112,17 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 		.procedure("updateThumbnailerPreferences", {
 			#[derive(Deserialize, Type)]
 			pub struct UpdateThumbnailerPreferences {
-				pub background_processing_percentage: u8, // 0-100
+				// pub background_processing_percentage: u8, // 0-100
 			}
 			R.mutation(
-				|node,
-				 UpdateThumbnailerPreferences {
-				     background_processing_percentage,
-				 }: UpdateThumbnailerPreferences| async move {
+				|node, UpdateThumbnailerPreferences { .. }: UpdateThumbnailerPreferences| async move {
 					node.config
-						.update_preferences(|preferences| {
-							preferences
-								.thumbnailer
-								.set_background_processing_percentage(
-									background_processing_percentage,
-								);
+						.update_preferences(|_| {
+							// TODO(fogodev): introduce configurable workers count to task system
 						})
 						.await
 						.map_err(|e| {
-							error!("failed to update thumbnailer preferences: {e:#?}");
+							error!(?e, "Failed to update thumbnailer preferences;");
 							rspc::Error::with_cause(
 								ErrorCode::InternalServerError,
 								"Failed to update thumbnailer preferences".to_string(),

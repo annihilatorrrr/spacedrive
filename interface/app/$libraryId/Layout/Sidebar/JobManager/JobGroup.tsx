@@ -10,7 +10,7 @@ import {
 	getTotalTasks,
 	JobGroup,
 	JobProgressEvent,
-	JobReport,
+	Report,
 	useLibraryMutation,
 	useTotalElapsedTimeText
 } from '@sd/client';
@@ -30,7 +30,7 @@ export default function ({ group, progress }: JobGroupProps) {
 
 	const [showChildJobs, setShowChildJobs] = useState(false);
 
-	const runningJob = jobs.find((job) => job.status === 'Running');
+	const runningJob = jobs.find((job: { status: string }) => job.status === 'Running');
 
 	const tasks = getTotalTasks(jobs);
 	const totalGroupTime = useTotalElapsedTimeText(jobs);
@@ -41,6 +41,17 @@ export default function ({ group, progress }: JobGroupProps) {
 	}, [jobs]);
 
 	if (jobs.length === 0) return <></>;
+	const { t } = useLocale();
+
+	const calculateETA = (job: Report) => {
+		let diff = 0;
+		if (job.created_at && job.estimated_completion) {
+			const start = new Date(job.created_at);
+			const end = new Date(job.estimated_completion);
+			diff = Math.abs(end.getTime() - start.getTime());
+		}
+		return diff;
+	};
 
 	return (
 		<ul className="relative overflow-visible">
@@ -69,9 +80,7 @@ export default function ({ group, progress }: JobGroupProps) {
 						textItems={[
 							[
 								{
-									text: `${formatNumber(tasks.total)} ${
-										tasks.total <= 1 ? 'task' : 'tasks'
-									}`
+									text: `${formatNumber(tasks.total)} ${t('task', { count: tasks.total })}`
 								},
 								{ text: dateStarted },
 								{ text: totalGroupTime || undefined },
@@ -80,7 +89,7 @@ export default function ({ group, progress }: JobGroupProps) {
 									text: ['Queued', 'Paused', 'Canceled', 'Failed'].includes(
 										group.status
 									)
-										? group.status
+										? t(`${group.status.toLowerCase()}`)
 										: undefined
 								}
 							],
@@ -106,19 +115,29 @@ export default function ({ group, progress }: JobGroupProps) {
 					</JobContainer>
 					{showChildJobs && (
 						<div>
-							{jobs.map((job) => (
-								<Job
-									isChild={jobs.length > 1}
-									key={job.id}
-									job={job}
-									progress={progress[job.id] ?? null}
-								/>
-							))}
+							{jobs.map((job) => {
+								const diff = calculateETA(job);
+
+								return (
+									<Job
+										isChild={jobs.length > 1}
+										key={job.id}
+										job={job}
+										progress={progress[job.id] ?? null}
+										eta={diff}
+									/>
+								);
+							})}
 						</div>
 					)}
 				</>
 			) : (
-				<Job job={jobs[0]!} progress={progress[jobs[0]!.id] || null} />
+				// add eta for individual jobs
+				<Job
+					job={jobs[0]!}
+					progress={progress[jobs[0]!.id] || null}
+					eta={calculateETA(jobs[0]!)}
+				/>
 			)}
 		</ul>
 	);
@@ -131,19 +150,19 @@ const toastErrorSuccess = (
 ) => {
 	return {
 		onError: () => {
-			errorMessage &&
+			if (errorMessage)
 				toast.error({
 					title: 'Error',
 					body: errorMessage
 				});
 		},
 		onSuccess: () => {
-			successMessage &&
+			if (successMessage)
 				toast.success({
 					title: 'Success',
 					body: successMessage
-				}),
-				successCallBack?.();
+				});
+			successCallBack?.();
 		}
 	};
 };
@@ -154,7 +173,7 @@ function Options({
 	setShowChildJobs,
 	showChildJobs
 }: {
-	activeJob?: JobReport;
+	activeJob?: Report;
 	group: JobGroup;
 	setShowChildJobs: () => void;
 	showChildJobs: boolean;
@@ -178,7 +197,7 @@ function Options({
 	const clearJob = useLibraryMutation(
 		['jobs.clear'],
 		toastErrorSuccess(t('failed_to_remove_job'), undefined, () => {
-			queryClient.invalidateQueries(['jobs.reports']);
+			queryClient.invalidateQueries({ queryKey: ['jobs.reports'] });
 		})
 	);
 
@@ -202,12 +221,16 @@ function Options({
 			{(group.status === 'Queued' || group.status === 'Paused' || isJobPaused) && (
 				<Button
 					className="cursor-pointer"
-					onClick={() => resumeJob.mutate(group.id)}
+					onClick={() =>
+						resumeJob.mutate(
+							group.running_job_id != null ? group.running_job_id : group.id
+						)
+					}
 					size="icon"
 					variant="outline"
 				>
 					<Tooltip label={t('resume')}>
-						<Play className="h-4 w-4 cursor-pointer" />
+						<Play className="size-4 cursor-pointer" />
 					</Tooltip>
 				</Button>
 			)}
@@ -218,7 +241,7 @@ function Options({
 					button={
 						<Tooltip label={t('actions')}>
 							<Button className="!px-1" variant="outline">
-								<DotsThreeVertical className="h-4 w-4 cursor-pointer" />
+								<DotsThreeVertical className="size-4 cursor-pointer" />
 							</Button>
 						</Tooltip>
 					}
@@ -251,23 +274,29 @@ function Options({
 					<Tooltip label={t('pause')}>
 						<Button
 							className="cursor-pointer"
-							onClick={() => pauseJob.mutate(group.id)}
+							onClick={() =>
+								pauseJob.mutate(
+									group.running_job_id != null ? group.running_job_id : group.id
+								)
+							}
 							size="icon"
 							variant="outline"
 						>
-							<Pause className="h-4 w-4 cursor-pointer" />
+							<Pause className="size-4 cursor-pointer" />
 						</Button>
 					</Tooltip>
 					<Tooltip label={t('stop')}>
 						<Button
 							className="cursor-pointer"
 							onClick={() => {
-								cancelJob.mutate(group.id);
+								cancelJob.mutate(
+									group.running_job_id != null ? group.running_job_id : group.id
+								);
 							}}
 							size="icon"
 							variant="outline"
 						>
-							<Stop className="h-4 w-4 cursor-pointer" />
+							<Stop className="size-4 cursor-pointer" />
 						</Button>
 					</Tooltip>
 				</>

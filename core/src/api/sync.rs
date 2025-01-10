@@ -1,8 +1,5 @@
-use std::sync::atomic::Ordering;
-
-use sd_core_sync::GetOpsArgs;
-
 use rspc::alpha::AlphaRouter;
+use std::sync::atomic::Ordering;
 
 use crate::util::MaybeUndefined;
 
@@ -10,33 +7,7 @@ use super::{utils::library, Ctx, R};
 
 pub(crate) fn mount() -> AlphaRouter<Ctx> {
 	R.router()
-		.procedure("newMessage", {
-			R.with2(library())
-				.subscription(|(_, library), _: ()| async move {
-					async_stream::stream! {
-						let mut rx = library.sync.subscribe();
-						while let Ok(_msg) = rx.recv().await {
-							// let op = match msg {
-							// 	SyncMessage::Ingested => (),
-							// 	SyncMessage::Created => op
-							// };
-							yield ();
-						}
-					}
-				})
-		})
-		.procedure("messages", {
-			R.with2(library()).query(|(_, library), _: ()| async move {
-				Ok(library
-					.sync
-					.get_ops(GetOpsArgs {
-						clocks: vec![],
-						count: 1000,
-					})
-					.await?)
-			})
-		})
-		.procedure("enable", {
+		.procedure("backfill", {
 			R.with2(library())
 				.mutation(|(node, library), _: ()| async move {
 					if library
@@ -48,12 +19,7 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 						return Ok(());
 					}
 
-					sd_core_sync::backfill::backfill_operations(
-						&library.db,
-						&library.sync,
-						library.config().await.instance_id,
-					)
-					.await;
+					sd_core_sync::backfill::backfill_operations(&library.sync).await?;
 
 					node.libraries
 						.edit(
@@ -63,8 +29,7 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 							MaybeUndefined::Undefined,
 							Some(true),
 						)
-						.await
-						.unwrap();
+						.await?;
 
 					Ok(())
 				})
@@ -77,5 +42,37 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 					.generate_sync_operations
 					.load(Ordering::Relaxed))
 			})
+		})
+		.procedure("active", {
+			R.with2(library())
+				.subscription(|(_, library), _: ()| async move {
+					#[derive(serde::Serialize, specta::Type)]
+					#[specta(rename = "SyncStatus")]
+					struct Data {
+						ingest: bool,
+						cloud_send: bool,
+						cloud_receive: bool,
+						cloud_ingest: bool,
+					}
+
+					async_stream::stream! {
+						let cloud_sync_state = &library.cloud_sync_state;
+						let sync = &library.sync;
+
+						loop {
+							yield Data {
+							  ingest: sync.active.load(Ordering::Relaxed),
+								cloud_send: cloud_sync_state.send_active.load(Ordering::Relaxed),
+								cloud_receive: cloud_sync_state.receive_active.load(Ordering::Relaxed),
+								cloud_ingest: cloud_sync_state.ingest_active.load(Ordering::Relaxed),
+							};
+
+							tokio::select! {
+								_ = cloud_sync_state.state_change_notifier.notified() => {},
+								_ = sync.active_notify.notified() => {}
+							}
+						}
+					}
+				})
 		})
 }

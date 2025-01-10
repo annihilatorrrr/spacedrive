@@ -2,12 +2,16 @@ import { CaretRight, Icon } from 'phosphor-react-native';
 import { Pressable, Text, View } from 'react-native';
 import { tw, twStyle } from '~/lib/tailwind';
 
+import { FeatureUnavailableAlert } from '../primitive/FeatureUnavailableAlert';
+
 type SettingsItemProps = {
 	title: string;
 	onPress?: () => void;
 	leftIcon?: Icon;
 	rightArea?: React.ReactNode;
+	comingSoon?: boolean;
 	rounded?: 'top' | 'bottom';
+	syncEnabled?: boolean;
 };
 
 export function SettingsItem(props: SettingsItemProps) {
@@ -17,26 +21,41 @@ export function SettingsItem(props: SettingsItemProps) {
 		props.rounded === 'top' ? 'rounded-t-md' : props.rounded === 'bottom' && 'rounded-b-md';
 	const border =
 		props.rounded === 'top'
-			? 'border-t border-r border-l border-app-input'
+			? 'border-t border-r border-l'
 			: props.rounded === 'bottom'
-			? 'border-b border-app-input border-r border-l'
-			: 'border-app-input border-l border-r';
+				? 'border-b border-r border-l'
+				: 'border-l border-r';
+
+	// Hide Cloud settings if sync is disabled
+	if (props.syncEnabled === false && props.title === 'Cloud') {
+		return null;
+	}
+
 	return (
-		<Pressable onPress={props.onPress}>
-			<View style={twStyle(' border-app-line/50 bg-app-box/50', borderRounded, border)}>
+		<Pressable
+			onPress={() => {
+				if (props.comingSoon) return FeatureUnavailableAlert();
+				return props.onPress?.();
+			}}
+		>
+			<View style={twStyle(' border-app-cardborder bg-app-card', borderRounded, border)}>
 				<View style={tw`h-auto flex-row items-center`}>
 					{props.leftIcon && (
 						<View
-							style={tw`ml-4 mr-5 h-8 w-8 items-center justify-center rounded-full border border-app-line bg-app-input`}
+							style={twStyle(
+								`ml-4 mr-5 h-8 w-8 items-center justify-center rounded-full border border-app-lightborder bg-app-button`,
+								props.comingSoon && 'opacity-50'
+							)}
 						>
 							{props.leftIcon({ size: 20, color: tw.color('ink-dull') })}
 						</View>
 					)}
 					<View
 						style={twStyle(
+							props.comingSoon && 'opacity-50',
 							`flex-1 flex-row items-center justify-between border-b py-4`,
 							borderRounded !== 'rounded-b-md'
-								? 'border-app-input'
+								? 'border-app-cardborder'
 								: 'border-transparent'
 						)}
 					>

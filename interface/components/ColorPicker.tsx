@@ -15,11 +15,11 @@ export const ColorPicker = <T extends FieldValues>({ className, ...props }: Prop
 			popover={usePopover()}
 			trigger={
 				<div
-					className={clsx('h-4 w-4 rounded-full shadow', className)}
+					className={clsx('size-4 rounded-full shadow', className)}
 					style={{ backgroundColor: field.value }}
 				/>
 			}
-			className="p-3"
+			className="relative z-[110] p-3"
 			sideOffset={5}
 		>
 			<HexColorPicker color={field.value} onChange={field.onChange} />

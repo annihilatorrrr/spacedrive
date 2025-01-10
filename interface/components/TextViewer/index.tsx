@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { languageMapping } from './prism';
 
 const prismaLazy = import('./prism-lazy');
+prismaLazy.catch((e) => console.error('Failed to load prism-lazy', e));
 
 export interface TextViewerProps {
 	src: string;
@@ -49,7 +50,7 @@ export const TextViewer = memo(
 						if (done) return;
 
 						const chunks = value.split('\n');
-						setLines((lines) => [...lines, ...chunks]);
+						setLines([...chunks]);
 
 						if (isSidebarPreview) return;
 
@@ -104,29 +105,33 @@ function TextRow({
 	const contentRef = useRef<HTMLSpanElement>(null);
 
 	useEffect(() => {
-		if (contentRef.current) {
-			const cb: IntersectionObserverCallback = async (events) => {
+		const ref = contentRef.current;
+		if (ref == null) return;
+
+		let intersectionObserver: null | IntersectionObserver = null;
+
+		prismaLazy.then(({ highlightElement }) => {
+			intersectionObserver = new IntersectionObserver((events) => {
 				for (const event of events) {
-					if (
-						!event.isIntersecting ||
-						contentRef.current?.getAttribute('data-highlighted') === 'true'
-					)
+					if (!event.isIntersecting || ref.getAttribute('data-highlighted') === 'true')
 						continue;
-					contentRef.current?.setAttribute('data-highlighted', 'true');
-					(await prismaLazy).highlightElement(event.target, false); // Prism's async seems to be broken
+
+					ref.setAttribute('data-highlighted', 'true');
+					highlightElement(event.target, false); // Prism's async seems to be broken
 
 					// With this class present TOML headers are broken Eg. `[dependencies]` will format over multiple lines
-					const children = contentRef.current?.children;
+					const children = ref.children;
 					if (children) {
 						for (const elem of children) {
 							elem.classList.remove('table');
 						}
 					}
 				}
-			};
+			});
+			intersectionObserver.observe(ref);
+		});
 
-			new IntersectionObserver(cb).observe(contentRef.current);
-		}
+		return () => intersectionObserver?.disconnect();
 	}, []);
 
 	return (
@@ -141,7 +146,7 @@ function TextRow({
 				<div
 					key={row.key}
 					className={clsx(
-						'token block shrink-0 whitespace-pre pl-2 pr-4 text-sm  leading-6 text-gray-450'
+						'token block shrink-0 whitespace-pre pl-2 pr-4 text-sm leading-6 text-gray-450'
 					)}
 				>
 					{row.index + 1}

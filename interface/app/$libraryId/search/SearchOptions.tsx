@@ -1,8 +1,10 @@
 import { FunnelSimple, Icon, Plus } from '@phosphor-icons/react';
 import { IconTypes } from '@sd/assets/util';
 import clsx from 'clsx';
+import { use } from 'i18next';
 import { memo, PropsWithChildren, useDeferredValue, useMemo, useState } from 'react';
-import { useLibraryMutation } from '@sd/client';
+import { get } from 'react-hook-form';
+import { useFeatureFlag, useLibraryMutation } from '@sd/client';
 import {
 	Button,
 	ContextMenuDivItem,
@@ -10,20 +12,22 @@ import {
 	Input,
 	Popover,
 	RadixCheckbox,
+	toast,
 	tw,
 	usePopover
 } from '@sd/ui';
-import { useIsDark, useKeybind } from '~/hooks';
+import { useIsDark, useKeybind, useLocale, useShortcut } from '~/hooks';
 
-import { AppliedFilters } from './AppliedFilters';
+import { getQuickPreviewStore, useQuickPreviewStore } from '../Explorer/QuickPreview/store';
 import { useSearchContext } from './context';
-import { filterRegistry, SearchFilterCRUD, useToggleOptionSelected } from './Filters';
+import { AppliedFilters, InteractiveSection } from './Filters/components/AppliedFilters';
+import { filterRegistry, SearchFilterCRUD, useToggleOptionSelected } from './Filters/index';
 import {
-	getSearchStore,
-	useRegisterSearchFilterOptions,
-	useSearchRegisteredFilters,
-	useSearchStore
-} from './store';
+	useFilterOptionStore,
+	useRegisterFilterOptions,
+	useSearchRegisteredFilters
+} from './Filters/store';
+import { getSearchStore, useSearchStore } from './store';
 import { UseSearch } from './useSearch';
 import { RenderIcon } from './util';
 
@@ -78,7 +82,7 @@ export const SearchOptionSubMenu = (
 					<SearchOptionItemInternals {...props}>{props.name}</SearchOptionItemInternals>
 				</ContextMenuDivItem>
 			}
-			className={clsx(MENU_STYLES, 'explorer-scroll -mt-1.5', props.className)}
+			className={clsx(MENU_STYLES, 'default-scroll -mt-1.5 max-h-80', props.className)}
 		>
 			{props.children}
 		</DropdownMenu.SubMenu>
@@ -93,6 +97,11 @@ export const SearchOptions = ({
 }: { allowExit?: boolean } & PropsWithChildren) => {
 	const search = useSearchContext();
 	const isDark = useIsDark();
+
+	const showSearchTargets = useFeatureFlag('searchTargetSwitcher');
+
+	const { t } = useLocale();
+
 	return (
 		<div
 			onMouseEnter={() => {
@@ -107,11 +116,26 @@ export const SearchOptions = ({
 				isDark ? 'bg-black/10' : 'bg-black/5'
 			)}
 		>
-			{/* <OptionContainer className="flex flex-row items-center">
-				<FilterContainer>
-					<InteractiveSection>Paths</InteractiveSection>
-				</FilterContainer>
-			</OptionContainer> */}
+			{showSearchTargets && (
+				<OptionContainer className="flex flex-row items-center overflow-hidden rounded">
+					<InteractiveSection
+						onClick={() => search.setTarget?.('paths')}
+						className={clsx(
+							search.target === 'paths' ? 'bg-app-box' : 'hover:bg-app-box/50'
+						)}
+					>
+						{t('paths')}
+					</InteractiveSection>
+					<InteractiveSection
+						onClick={() => search.setTarget?.('objects')}
+						className={clsx(
+							search.target === 'objects' ? 'bg-app-box' : 'hover:bg-app-box/50'
+						)}
+					>
+						{t('objects')}
+					</InteractiveSection>
+				</OptionContainer>
+			)}
 
 			<AddFilterButton />
 
@@ -124,7 +148,7 @@ export const SearchOptions = ({
 
 			{children ?? (
 				<>
-					{(search.dynamicFilters.length > 0 || search.search !== '') && (
+					{((search.filters && search.filters.length > 0) || search.search !== '') && (
 						<SaveSearchButton />
 					)}
 
@@ -136,7 +160,7 @@ export const SearchOptions = ({
 };
 
 const SearchResults = memo(
-	({ searchQuery, search }: { searchQuery: string; search: UseSearch }) => {
+	({ searchQuery, search }: { searchQuery: string; search: UseSearch<any> }) => {
 		const { allFiltersKeys } = search;
 		const searchResults = useSearchRegisteredFilters(searchQuery);
 
@@ -163,7 +187,7 @@ const SearchResults = memo(
 							<div className="mr-4 flex flex-row items-center gap-2.5">
 								<div className="flex items-center gap-1">
 									<RenderIcon
-										className="h-[13px] w-[13px] opacity-80"
+										className="size-[13px] opacity-80"
 										icon={filter.icon}
 									/>
 									<span className="text-xs text-ink-dull opacity-80">
@@ -185,7 +209,7 @@ const SearchResults = memo(
 
 function AddFilterButton() {
 	const search = useSearchContext();
-	const searchState = useSearchStore();
+	const filterStore = useFilterOptionStore();
 
 	const [searchQuery, setSearch] = useState('');
 
@@ -203,6 +227,8 @@ function AddFilterButton() {
 		[searchQuery]
 	);
 
+	const { t } = useLocale();
+
 	return (
 		<>
 			{registerFilters}
@@ -211,12 +237,12 @@ function AddFilterButton() {
 					onKeyDown={(e) => e.stopPropagation()}
 					className={clsx(
 						MENU_STYLES,
-						'explorer-scroll max-h-[80vh] min-h-[100px] min-w-[200px] max-w-fit'
+						'default-scroll max-h-[80vh] min-h-[100px] min-w-[200px] max-w-fit'
 					)}
 					trigger={
 						<Button className="flex flex-row gap-1" size="xs" variant="dotted">
 							<FunnelSimple />
-							Add Filter
+							{t('add_filter')}
 						</Button>
 					}
 				>
@@ -227,7 +253,7 @@ function AddFilterButton() {
 						autoComplete="off"
 						autoCorrect="off"
 						variant="transparent"
-						placeholder="Filter..."
+						placeholder={`${t('filter')}...`}
 					/>
 					<Separator />
 					{searchQuery === '' ? (
@@ -235,7 +261,7 @@ function AddFilterButton() {
 							<filter.Render
 								key={filter.name}
 								filter={filter as any}
-								options={searchState.filterOptions.get(filter.name)!}
+								options={filterStore.filterOptions.get(filter.name)!}
 								search={search}
 							/>
 						))
@@ -256,6 +282,8 @@ function SaveSearchButton() {
 
 	const saveSearch = useLibraryMutation('search.saved.create');
 
+	const { t } = useLocale();
+
 	return (
 		<Popover
 			popover={popover}
@@ -263,7 +291,7 @@ function SaveSearchButton() {
 			trigger={
 				<Button className="flex shrink-0 flex-row" size="xs" variant="dotted">
 					<Plus weight="bold" className="mr-1" />
-					Save Search
+					{t('save_search')}
 				</Button>
 			}
 		>
@@ -275,8 +303,11 @@ function SaveSearchButton() {
 
 					saveSearch.mutate({
 						name,
+						target: search.target,
 						search: search.search,
-						filters: JSON.stringify(search.mergedFilters.map((f) => f.arg)),
+						filters: search.mergedFilters
+							? JSON.stringify(search.mergedFilters.map((f) => f.arg))
+							: undefined,
 						description: null,
 						icon: null
 					});
@@ -289,7 +320,7 @@ function SaveSearchButton() {
 					onChange={(e) => setName(e.target.value)}
 					autoFocus
 					variant="default"
-					placeholder="Name"
+					placeholder={t('name')}
 					className="w-[130px]"
 				/>
 				<Button
@@ -298,7 +329,7 @@ function SaveSearchButton() {
 					className="ml-2"
 					variant="accent"
 				>
-					Save
+					{t('save')}
 				</Button>
 			</form>
 		</Popover>
@@ -307,18 +338,28 @@ function SaveSearchButton() {
 
 function EscapeButton() {
 	const search = useSearchContext();
+	let { open: isQpOpen } = useQuickPreviewStore();
 
-	useKeybind(['Escape'], () => {
-		search.setSearch('');
+	function escape() {
+		search.setSearch?.(undefined);
+		search.setFilters?.(undefined);
 		search.setSearchBarFocused(false);
+	}
+
+	useShortcut('explorerEscape', (e) => {
+		isQpOpen = getQuickPreviewStore().open;
+
+		e.preventDefault();
+		e.stopPropagation();
+		// Check the open state from the store
+		if (!isQpOpen) {
+			escape();
+		}
 	});
 
 	return (
 		<kbd
-			onClick={() => {
-				search.setSearch('');
-				search.setSearchBarFocused(false);
-			}}
+			onClick={escape}
 			className="ml-2 rounded-lg border border-app-line bg-app-box px-2 py-1 text-[10.5px] tracking-widest shadow"
 		>
 			ESC
@@ -332,7 +373,7 @@ function RegisterSearchFilterOptions(props: {
 }) {
 	const options = props.filter.useOptions({ search: props.searchQuery });
 
-	useRegisterSearchFilterOptions(
+	useRegisterFilterOptions(
 		props.filter,
 		useMemo(
 			() => options.map((o) => ({ ...o, type: props.filter.name })),

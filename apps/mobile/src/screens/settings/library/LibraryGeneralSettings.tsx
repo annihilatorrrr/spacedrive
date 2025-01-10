@@ -3,11 +3,11 @@ import { Text, View } from 'react-native';
 import { TouchableOpacity } from 'react-native-gesture-handler';
 import { z } from 'zod';
 import { useBridgeMutation, useLibraryContext, useZodForm } from '@sd/client';
-import { Input } from '~/components/form/Input';
 import ScreenContainer from '~/components/layout/ScreenContainer';
 import DeleteLibraryModal from '~/components/modal/confirmModals/DeleteLibraryModal';
 import { Button } from '~/components/primitive/Button';
 import { Divider } from '~/components/primitive/Divider';
+import { Input } from '~/components/primitive/Input';
 import { toast } from '~/components/primitive/Toast';
 import SettingsButton from '~/components/settings/SettingsButton';
 import { SettingsTitle } from '~/components/settings/SettingsContainer';
@@ -34,7 +34,7 @@ const LibraryGeneralSettingsScreen = (_: SettingsStackScreenProps<'LibraryGenera
 	useAutoForm(form, (value) => {
 		editLibrary({ description: value.description, name: value.name, id: library.uuid });
 		// console.log('Updated', value);
-		toast({ type: 'success', text: 'Library updated!' });
+		toast.success('Library updated!');
 	});
 
 	return (
@@ -71,7 +71,7 @@ const LibraryGeneralSettingsScreen = (_: SettingsStackScreenProps<'LibraryGenera
 				<SettingsButton
 					description="Export this library to a file."
 					buttonText="Export"
-					buttonPress={() => {
+					onPress={() => {
 						//TODO: Export library
 					}}
 					buttonTextStyle="font-bold text-ink-dull"
@@ -88,12 +88,9 @@ const LibraryGeneralSettingsScreen = (_: SettingsStackScreenProps<'LibraryGenera
 					</View>
 					<DeleteLibraryModal
 						trigger={
-							//Needed to make button work
-							<TouchableOpacity activeOpacity={1}>
-								<Button variant="danger">
-									<Text style={tw`font-bold text-ink`}>Delete</Text>
-								</Button>
-							</TouchableOpacity>
+							<View style={tw`rounded-md border-red-800 bg-red-600 px-3 py-1.5`}>
+								<Text style={tw`font-bold text-ink`}>Delete</Text>
+							</View>
 						}
 						libraryUuid={library.uuid}
 					/>

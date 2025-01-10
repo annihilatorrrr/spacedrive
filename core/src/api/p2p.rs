@@ -1,11 +1,11 @@
-use crate::p2p::{operations, Header, P2PEvent, PeerMetadata};
+use crate::p2p::{operations, ConnectionMethod, DiscoveryMethod, Header, P2PEvent, PeerMetadata};
 
-use sd_p2p2::RemoteIdentity;
+use sd_p2p::{PeerConnectionCandidate, RemoteIdentity};
 
 use rspc::{alpha::AlphaRouter, ErrorCode};
 use serde::Deserialize;
 use specta::Type;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::PoisonError};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -19,17 +19,40 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 
 				let mut queued = Vec::new();
 
-				for (identity, peer, metadata) in
-					node.p2p.p2p.peers().iter().filter_map(|(i, p)| {
-						PeerMetadata::from_hashmap(&p.metadata())
-							.ok()
-							.map(|m| (i, p, m))
-					}) {
-					let identity = *identity;
-					match peer.is_connected() {
-						true => queued.push(P2PEvent::ConnectedPeer { identity }),
-						false => queued.push(P2PEvent::DiscoveredPeer { identity, metadata }),
-					}
+				for (_, peer, metadata) in node.p2p.p2p.peers().iter().filter_map(|(i, p)| {
+					PeerMetadata::from_hashmap(&p.metadata())
+						.ok()
+						.map(|m| (i, p, m))
+				}) {
+					queued.push(P2PEvent::PeerChange {
+						identity: peer.identity(),
+						connection: if peer.is_connected() {
+							if node.p2p.quic.is_relayed(peer.identity()) {
+								ConnectionMethod::Relay
+							} else {
+								ConnectionMethod::Local
+							}
+						} else {
+							ConnectionMethod::Disconnected
+						},
+						discovery: if peer
+							.connection_candidates()
+							.iter()
+							.any(|c| matches!(c, PeerConnectionCandidate::Manual(_)))
+						{
+							DiscoveryMethod::Manual
+						} else if peer
+							.connection_candidates()
+							.iter()
+							.all(|c| *c == PeerConnectionCandidate::Relay)
+						{
+							DiscoveryMethod::Relay
+						} else {
+							DiscoveryMethod::Local
+						},
+						metadata,
+						addrs: peer.addrs(),
+					});
 				}
 
 				Ok(async_stream::stream! {
@@ -46,30 +69,40 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 		.procedure("state", {
 			R.query(|node, _: ()| async move { Ok(node.p2p.state().await) })
 		})
+		.procedure("listeners", {
+			R.query(|node, _: ()| async move {
+				Ok(node
+					.p2p
+					.listeners
+					.lock()
+					.unwrap_or_else(PoisonError::into_inner)
+					.clone())
+			})
+		})
 		.procedure("debugConnect", {
 			R.mutation(|node, identity: RemoteIdentity| async move {
 				let peer = { node.p2p.p2p.peers().get(&identity).cloned() };
 				let mut stream = peer
 					.ok_or(rspc::Error::new(
 						ErrorCode::InternalServerError,
-						"big man, offline".into(),
+						"big man, not found".into(),
 					))?
 					.new_stream()
 					.await
-					.map_err(|err| {
+					.map_err(|e| {
 						rspc::Error::new(
 							ErrorCode::InternalServerError,
-							format!("error in peer.new_stream: {:?}", err),
+							format!("error in peer.new_stream: {:?}", e),
 						)
 					})?;
 
 				stream
 					.write_all(&Header::Ping.to_bytes())
 					.await
-					.map_err(|err| {
+					.map_err(|e| {
 						rspc::Error::new(
 							ErrorCode::InternalServerError,
-							format!("error sending ping header: {:?}", err),
+							format!("error sending ping header: {:?}", e),
 						)
 					})?;
 
@@ -93,8 +126,8 @@ pub(crate) fn mount() -> AlphaRouter<Ctx> {
 						.collect::<Vec<_>>(),
 				)
 				.await
-				.map_err(|_err| {
-					rspc::Error::new(ErrorCode::InternalServerError, "todo: error".into())
+				.map_err(|spacedrop_err| {
+					rspc::Error::new(ErrorCode::InternalServerError, spacedrop_err.to_string())
 				})
 			})
 		})

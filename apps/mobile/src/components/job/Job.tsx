@@ -10,30 +10,30 @@ import {
 } from 'phosphor-react-native';
 import { memo } from 'react';
 import { View, ViewStyle } from 'react-native';
-import { JobProgressEvent, JobReport, useJobInfo } from '@sd/client';
-import { tw } from '~/lib/tailwind';
+import { JobProgressEvent, Report, useJobInfo } from '@sd/client';
+import { tw, twStyle } from '~/lib/tailwind';
 
 import { ProgressBar } from '../animation/ProgressBar';
 import JobContainer from './JobContainer';
 
 type JobProps = {
-	job: JobReport;
+	job: Report;
 	isChild?: boolean;
 	containerStyle?: ViewStyle;
 	progress: JobProgressEvent | null;
 };
 
 const JobIcon: Record<string, Icon> = {
-	indexer: Folder,
-	media_processor: Image,
-	file_identifier: Fingerprint,
-	file_copier: Copy,
-	file_deleter: Trash,
-	file_cutter: Scissors,
-	object_validator: Fingerprint
+	Indexer: Folder,
+	MediaProcessor: Image,
+	FileIdentifier: Fingerprint,
+	FileCopier: Copy,
+	FileDeleter: Trash,
+	FileCutter: Scissors,
+	ObjectValidator: Fingerprint
 };
 
-function Job({ job, isChild, progress }: JobProps) {
+function Job({ job, isChild, progress, containerStyle }: JobProps) {
 	const jobData = useJobInfo(job, progress);
 
 	if (job.status === 'CompletedWithErrors') {
@@ -42,7 +42,7 @@ function Job({ job, isChild, progress }: JobProps) {
 		// 	<pre className="custom-scroll inspector-scroll max-h-[300px] rounded border border-app-darkBox bg-app-darkBox/80 p-3">
 		// 		{job.errors_text.map((error, i) => (
 		// 			<p
-		// 				className="mb-1 w-full overflow-auto whitespace-normal break-words text-sm"
+		// 				className="w-full mb-1 overflow-auto text-sm break-words whitespace-normal"
 		// 				key={i}
 		// 			>
 		// 				{error.trim()}
@@ -70,6 +70,7 @@ function Job({ job, isChild, progress }: JobProps) {
 
 	return (
 		<JobContainer
+			containerStyle={twStyle(containerStyle)}
 			name={jobData.name}
 			icon={JobIcon[job.name]}
 			textItems={

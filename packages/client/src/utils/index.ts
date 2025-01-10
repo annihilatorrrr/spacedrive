@@ -2,8 +2,12 @@ import { QueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import type { Object } from '..';
-import type { ExplorerItem, FilePath, NonIndexedPathItem } from '../core';
-import { LibraryConfigWrapped } from '../core';
+import {
+	LibraryConfigWrapped,
+	type ExplorerItem,
+	type FilePath,
+	type NonIndexedPathItem
+} from '../core';
 
 export * from './jobs';
 
@@ -83,8 +87,8 @@ export function getIndexedItemFilePath(data: ExplorerItem) {
 	return data.type === 'Path'
 		? data.item
 		: data.type === 'Object'
-		? data.item.file_paths[0] ?? null
-		: null;
+			? (data.item.file_paths[0] ?? null)
+			: null;
 }
 
 export function getItemLocation(data: ExplorerItem) {
@@ -118,13 +122,12 @@ export type UnionToIntersection<U> = (U extends never ? never : (arg: U) => neve
 	? I
 	: never;
 
-export type UnionToTuple<T> = UnionToIntersection<T extends never ? never : (t: T) => T> extends (
-	_: never
-) => infer W
-	? [...UnionToTuple<Exclude<T, W>>, W]
-	: [];
+export type UnionToTuple<T> =
+	UnionToIntersection<T extends never ? never : (t: T) => T> extends (_: never) => infer W
+		? [...UnionToTuple<Exclude<T, W>>, W]
+		: [];
 
-export function formatNumber(n: number) {
+export function formatNumber(n: number | bigint) {
 	if (!n) return '0';
 	return Intl.NumberFormat().format(n);
 }
@@ -132,24 +135,22 @@ export function formatNumber(n: number) {
 export function insertLibrary(queryClient: QueryClient, library: LibraryConfigWrapped) {
 	queryClient.setQueryData(['library.list'], (libraries: any) => {
 		// The invalidation system beat us to it
-		if (libraries.items.find((l: any) => l.__id === library.uuid)) return libraries;
+		if ((libraries || []).find((l: any) => l.uuid === library.uuid)) return libraries;
 
-		return {
-			items: [
-				...(libraries.items || []),
-				{
-					__type: 'LibraryConfigWrapped',
-					__id: library.uuid
-				}
-			],
-			nodes: [
-				...(libraries.nodes || []),
-				{
-					__type: 'LibraryConfigWrapped',
-					__id: library.uuid,
-					...library
-				}
-			]
-		};
+		return [library, ...libraries];
 	});
+}
+
+export function int32ArrayToBigInt([high, low]: [number, number]) {
+	// Note: These magic shift operations internally convert high into i32 and low into u32
+	return (BigInt(high | 0) << 32n) | BigInt(low >>> 0);
+}
+
+export function uint32ArrayToBigInt([high, low]: [number, number]) {
+	// Note: These magic shift operations internally convert high into u32 and low into u32
+	return (BigInt(high >>> 0) << 32n) | BigInt(low >>> 0);
+}
+
+export function capitalize<T extends string>(string: T): Capitalize<T> {
+	return (string.charAt(0).toUpperCase() + string.slice(1)) as Capitalize<T>;
 }

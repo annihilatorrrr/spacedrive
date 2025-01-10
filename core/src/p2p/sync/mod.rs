@@ -1,18 +1,13 @@
 #![allow(clippy::panic, clippy::unwrap_used)] // TODO: Finish this
 
-use crate::{
-	library::Library,
-	sync::{self, GetOpsArgs},
-};
+use crate::library::Library;
 
-use sd_p2p_proto::{decode, encode};
-use sd_sync::CRDTOperation;
+// use sd_p2p_proto::{decode, encode};
+// use sd_sync::CompressedCRDTOperationsPerModelPerDevice;
 
 use std::sync::Arc;
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tracing::*;
-use uuid::Uuid;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::P2PManager;
 
@@ -21,240 +16,246 @@ pub use proto::*;
 
 pub use originator::run as originator;
 mod originator {
-	use crate::p2p::Header;
+	// use crate::p2p::Header;
 
 	use super::*;
-	use responder::tx as rx;
-	use sd_p2p_tunnel::Tunnel;
+	// use responder::tx as rx;
+	use sd_core_sync::SyncManager;
+	// use sd_p2p_tunnel::Tunnel;
 
 	pub mod tx {
-		use super::*;
 
-		#[derive(Debug, PartialEq)]
-		pub struct Operations(pub Vec<CRDTOperation>);
+		// use super::*;
 
-		impl Operations {
-			// TODO: Per field errors for better error handling
-			pub async fn from_stream(
-				stream: &mut (impl AsyncRead + Unpin),
-			) -> std::io::Result<Self> {
-				Ok(Self(
-					rmp_serde::from_slice(&decode::buf(stream).await.unwrap()).unwrap(),
-				))
-			}
+		// #[derive(Debug)]
+		// pub struct Operations(pub CompressedCRDTOperationsPerModelPerDevice);
 
-			pub fn to_bytes(&self) -> Vec<u8> {
-				let Self(args) = self;
-				let mut buf = vec![];
+		// impl Operations {
+		// 	// TODO: Per field errors for better error handling
+		// 	pub async fn from_stream(
+		// 		stream: &mut (impl AsyncRead + Unpin),
+		// 	) -> std::io::Result<Self> {
+		// 		Ok(Self(
+		// 			rmp_serde::from_slice(&decode::buf(stream).await.unwrap()).unwrap(),
+		// 		))
+		// 	}
 
-				// TODO: Error handling
-				encode::buf(&mut buf, &rmp_serde::to_vec_named(&args).unwrap());
-				buf
-			}
-		}
+		// 	pub fn to_bytes(&self) -> Vec<u8> {
+		// 		let Self(args) = self;
+		// 		let mut buf = vec![];
 
-		#[cfg(test)]
-		#[tokio::test]
-		async fn test() {
-			{
-				let original = Operations(vec![]);
+		// 		// TODO: Error handling
+		// 		encode::buf(&mut buf, &rmp_serde::to_vec_named(&args).unwrap());
+		// 		buf
+		// 	}
+		// }
 
-				let mut cursor = std::io::Cursor::new(original.to_bytes());
-				let result = Operations::from_stream(&mut cursor).await.unwrap();
-				assert_eq!(original, result);
-			}
+		// #[cfg(test)]
+		// #[tokio::test]
+		// async fn test() {
+		// 	use sd_sync::CRDTOperation;
+		// 	use uuid::Uuid;
 
-			{
-				let original = Operations(vec![CRDTOperation {
-					instance: Uuid::new_v4(),
-					timestamp: sync::NTP64(0),
-					id: Uuid::new_v4(),
-					record_id: serde_json::Value::Null,
-					model: "name".to_string(),
-					data: sd_sync::CRDTOperationData::Create,
-				}]);
+		// 	{
+		// 		let original = Operations(CompressedCRDTOperationsPerModelPerDevice::new(vec![]));
 
-				let mut cursor = std::io::Cursor::new(original.to_bytes());
-				let result = Operations::from_stream(&mut cursor).await.unwrap();
-				assert_eq!(original, result);
-			}
-		}
+		// 		let mut cursor = std::io::Cursor::new(original.to_bytes());
+		// 		let result = Operations::from_stream(&mut cursor).await.unwrap();
+		// 		assert_eq!(original, result);
+		// 	}
+
+		// 	{
+		// 		let original = Operations(CompressedCRDTOperationsPerModelPerDevice::new(vec![
+		// 			CRDTOperation {
+		// 				device_pub_id: Uuid::new_v4(),
+		// 				timestamp: sync::NTP64(0),
+		// 				record_id: rmpv::Value::Nil,
+		// 				model_id: 0,
+		// 				data: sd_sync::CRDTOperationData::create(),
+		// 			},
+		// 		]));
+
+		// 		let mut cursor = std::io::Cursor::new(original.to_bytes());
+		// 		let result = Operations::from_stream(&mut cursor).await.unwrap();
+		// 		assert_eq!(original, result);
+		// 	}
+		// }
 	}
 
+	// #[instrument(skip(sync, p2p))]
 	/// REMEMBER: This only syncs one direction!
-	pub async fn run(library_id: Uuid, sync: &Arc<sync::Manager>, p2p: &Arc<super::P2PManager>) {
-		for (remote_identity, peer) in p2p.get_library_instances(&library_id) {
-			if !peer.is_connected() {
-				continue;
-			};
+	pub async fn run(_library: Arc<Library>, _sync: &SyncManager, _p2p: &Arc<super::P2PManager>) {
+		// for (remote_identity, peer) in p2p.get_library_instances(&library.id) {
+		// 	if !peer.is_connected() {
+		// 		continue;
+		// 	};
 
-			let sync = sync.clone();
+		// 	let sync = sync.clone();
 
-			tokio::spawn(async move {
-				debug!(
-					"Alerting peer '{remote_identity:?}' of new sync events for library '{library_id:?}'"
-				);
+		// 	let library = library.clone();
+		// 	tokio::spawn(async move {
+		// 		debug!(
+		// 			?remote_identity,
+		// 			%library.id,
+		// 			"Alerting peer of new sync events for library;"
+		// 		);
 
-				let mut stream = peer.new_stream().await.unwrap();
+		// 		let mut stream = peer.new_stream().await.unwrap();
 
-				stream
-					.write_all(&Header::Sync(library_id).to_bytes())
-					.await
-					.unwrap();
+		// 		stream.write_all(&Header::Sync.to_bytes()).await.unwrap();
 
-				let mut tunnel = Tunnel::initiator(stream).await.unwrap();
+		// 		let mut tunnel = Tunnel::initiator(stream, &library.identity).await.unwrap();
 
-				tunnel
-					.write_all(&SyncMessage::NewOperations.to_bytes())
-					.await
-					.unwrap();
-				tunnel.flush().await.unwrap();
+		// 		tunnel
+		// 			.write_all(&SyncMessage::NewOperations.to_bytes())
+		// 			.await
+		// 			.unwrap();
+		// 		tunnel.flush().await.unwrap();
 
-				while let Ok(rx::MainRequest::GetOperations(args)) =
-					rx::MainRequest::from_stream(&mut tunnel).await
-				{
-					let ops = sync.get_ops(args).await.unwrap();
-
-					tunnel
-						.write_all(&tx::Operations(ops).to_bytes())
-						.await
-						.unwrap();
-					tunnel.flush().await.unwrap();
-				}
-			});
-		}
+		// 		while let Ok(rx::MainRequest::GetOperations(GetOpsArgs {
+		// 			timestamp_per_device,
+		// 			count,
+		// 		})) = rx::MainRequest::from_stream(&mut tunnel).await
+		// 		{
+		// 			tunnel
+		// 				.write_all(
+		// 					&tx::Operations(CompressedCRDTOperationsPerModelPerDevice::new(
+		// 						sync.get_ops(count, timestamp_per_device).await.unwrap(),
+		// 					))
+		// 					.to_bytes(),
+		// 				)
+		// 				.await
+		// 				.unwrap();
+		// 			tunnel.flush().await.unwrap();
+		// 		}
+		// 	});
+		// }
 	}
 }
 
 pub use responder::run as responder;
 mod responder {
+
 	use super::*;
-	use originator::tx as rx;
+	// use futures::StreamExt;
 
-	pub mod tx {
-		use serde::{Deserialize, Serialize};
+	// pub mod tx {
+	// 	use serde::{Deserialize, Serialize};
 
-		use super::*;
+	// 	use super::*;
 
-		#[derive(Serialize, Deserialize, PartialEq, Debug)]
-		pub enum MainRequest {
-			GetOperations(GetOpsArgs),
-			Done,
-		}
+	// 	#[derive(Serialize, Deserialize, PartialEq, Debug)]
+	// 	pub enum MainRequest {
+	// 		GetOperations(GetOpsArgs),
+	// 		Done,
+	// 	}
 
-		impl MainRequest {
-			// TODO: Per field errors for better error handling
-			pub async fn from_stream(
-				stream: &mut (impl AsyncRead + Unpin),
-			) -> std::io::Result<Self> {
-				Ok(
-					// TODO: Error handling
-					rmp_serde::from_slice(&decode::buf(stream).await.unwrap()).unwrap(),
-				)
-			}
+	// 	impl MainRequest {
+	// 		// TODO: Per field errors for better error handling
+	// 		pub async fn from_stream(
+	// 			stream: &mut (impl AsyncRead + Unpin),
+	// 		) -> std::io::Result<Self> {
+	// 			Ok(
+	// 				// TODO: Error handling
+	// 				rmp_serde::from_slice(&decode::buf(stream).await.unwrap()).unwrap(),
+	// 			)
+	// 		}
 
-			pub fn to_bytes(&self) -> Vec<u8> {
-				let mut buf = vec![];
-				// TODO: Error handling
-				encode::buf(&mut buf, &rmp_serde::to_vec_named(&self).unwrap());
-				buf
-			}
-		}
+	// 		pub fn to_bytes(&self) -> Vec<u8> {
+	// 			let mut buf = vec![];
+	// 			// TODO: Error handling
+	// 			encode::buf(&mut buf, &rmp_serde::to_vec_named(&self).unwrap());
+	// 			buf
+	// 		}
+	// 	}
 
-		#[cfg(test)]
-		#[tokio::test]
-		async fn test() {
-			{
-				let original = MainRequest::GetOperations(GetOpsArgs {
-					clocks: vec![],
-					count: 0,
-				});
+	// 	#[cfg(test)]
+	// 	#[tokio::test]
+	// 	async fn test() {
+	// 		{
+	// 			let original = MainRequest::GetOperations(GetOpsArgs {
+	// 				timestamp_per_device: vec![],
+	// 				count: 0,
+	// 			});
 
-				let mut cursor = std::io::Cursor::new(original.to_bytes());
-				let result = MainRequest::from_stream(&mut cursor).await.unwrap();
-				assert_eq!(original, result);
-			}
+	// 			let mut cursor = std::io::Cursor::new(original.to_bytes());
+	// 			let result = MainRequest::from_stream(&mut cursor).await.unwrap();
+	// 			assert_eq!(original, result);
+	// 		}
 
-			{
-				let original = MainRequest::Done;
+	// 		{
+	// 			let original = MainRequest::Done;
 
-				let mut cursor = std::io::Cursor::new(original.to_bytes());
-				let result = MainRequest::from_stream(&mut cursor).await.unwrap();
-				assert_eq!(original, result);
-			}
-		}
-	}
+	// 			let mut cursor = std::io::Cursor::new(original.to_bytes());
+	// 			let result = MainRequest::from_stream(&mut cursor).await.unwrap();
+	// 			assert_eq!(original, result);
+	// 		}
+	// 	}
+	// }
 
 	pub async fn run(
-		stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
-		library: Arc<Library>,
+		_stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
+		_library: Arc<Library>,
 	) -> Result<(), ()> {
-		let ingest = &library.sync.ingest;
+		// use sync::ingest::*;
 
-		async fn early_return(stream: &mut (impl AsyncRead + AsyncWrite + Unpin)) {
-			// TODO: Proper error returned to remote instead of this.
-			// TODO: We can't just abort the connection when the remote is expecting data.
-			stream
-				.write_all(&tx::MainRequest::Done.to_bytes())
-				.await
-				.unwrap();
-			stream.flush().await.unwrap();
-		}
+		// let ingest = &library.sync.ingest;
 
-		let Ok(mut rx) = ingest.req_rx.try_lock() else {
-			warn!("Rejected sync due to libraries lock being held!");
+		// ingest.event_tx.send(Event::Notification).await.unwrap();
 
-			early_return(stream).await;
-			return Ok(());
-		};
+		// let mut rx = pin!(ingest.req_rx.clone());
 
-		use sync::ingest::*;
+		// while let Some(req) = rx.next().await {
+		// 	const OPS_PER_REQUEST: u32 = 1000;
 
-		ingest.event_tx.send(Event::Notification).await.unwrap();
+		// 	let timestamps = match req {
+		// 		Request::FinishedIngesting => break,
+		// 		Request::Messages { timestamps, .. } => timestamps,
+		// 	};
 
-		while let Some(req) = rx.recv().await {
-			const OPS_PER_REQUEST: u32 = 1000;
+		// 	debug!(?timestamps, "Getting ops for timestamps;");
 
-			let timestamps = match req {
-				Request::FinishedIngesting => break,
-				Request::Messages { timestamps } => timestamps,
-				_ => continue,
-			};
+		// 	stream
+		// 		.write_all(
+		// 			&tx::MainRequest::GetOperations(sync::GetOpsArgs {
+		// 				timestamp_per_device: timestamps,
+		// 				count: OPS_PER_REQUEST,
+		// 			})
+		// 			.to_bytes(),
+		// 		)
+		// 		.await
+		// 		.unwrap();
+		// 	stream.flush().await.unwrap();
 
-			debug!("Getting ops for timestamps {timestamps:?}");
+		// 	let rx::Operations(ops) = rx::Operations::from_stream(stream).await.unwrap();
 
-			stream
-				.write_all(
-					&tx::MainRequest::GetOperations(sync::GetOpsArgs {
-						clocks: timestamps,
-						count: OPS_PER_REQUEST,
-					})
-					.to_bytes(),
-				)
-				.await
-				.unwrap();
-			stream.flush().await.unwrap();
+		// 	let (wait_tx, wait_rx) = tokio::sync::oneshot::channel::<()>();
 
-			let rx::Operations(ops) = rx::Operations::from_stream(stream).await.unwrap();
+		// 	// FIXME: If there are exactly a multiple of OPS_PER_REQUEST operations,
+		// 	// then this will bug, as we sent `has_more` as true, but we don't have
+		// 	// more operations to send.
 
-			ingest
-				.event_tx
-				.send(Event::Messages(MessagesEvent {
-					instance_id: library.sync.instance,
-					has_more: ops.len() == OPS_PER_REQUEST as usize,
-					messages: ops,
-				}))
-				.await
-				.expect("TODO: Handle ingest channel closed, so we don't loose ops");
-		}
+		// 	ingest
+		// 		.event_tx
+		// 		.send(Event::Messages(MessagesEvent {
+		// 			device_pub_id: library.sync.device_pub_id.clone(),
+		// 			has_more: ops.len() == OPS_PER_REQUEST as usize,
+		// 			messages: ops,
+		// 			wait_tx: Some(wait_tx),
+		// 		}))
+		// 		.await
+		// 		.expect("TODO: Handle ingest channel closed, so we don't loose ops");
 
-		debug!("Sync responder done");
+		// 	wait_rx.await.unwrap()
+		// }
 
-		stream
-			.write_all(&tx::MainRequest::Done.to_bytes())
-			.await
-			.unwrap();
-		stream.flush().await.unwrap();
+		// debug!("Sync responder done");
+
+		// stream
+		// 	.write_all(&tx::MainRequest::Done.to_bytes())
+		// 	.await
+		// 	.unwrap();
+		// stream.flush().await.unwrap();
 
 		Ok(())
 	}

@@ -12,12 +12,16 @@ import clsx from 'clsx';
 import { useMemo } from 'react';
 import { useDocumentEventListener } from 'rooks';
 import { ExplorerLayout, useSelector } from '@sd/client';
-import { toast } from '@sd/ui';
 import { useKeyMatcher, useLocale } from '~/hooks';
 
 import { KeyManager } from '../KeyManager';
 import { Spacedrop, SpacedropButton } from '../Spacedrop';
-import TopBarOptions, { ToolOption, TOP_BAR_ICON_STYLE } from '../TopBar/TopBarOptions';
+import TopBarOptions, {
+	ToolOption,
+	TOP_BAR_ICON_CLASSLIST,
+	TOP_BAR_ICON_DEFAULT_PROPS,
+	TOP_BAR_ICON_WEIGHT
+} from '../TopBar/TopBarOptions';
 import { useExplorerContext } from './Context';
 import OptionsPanel from './OptionsPanel';
 import { explorerStore } from './store';
@@ -31,7 +35,7 @@ const layoutIcons: Record<ExplorerLayout, Icon> = {
 export const useExplorerTopBarOptions = () => {
 	const [showInspector, tagAssignMode] = useSelector(explorerStore, (s) => [
 		s.showInspector,
-		s.tagAssignMode
+		s.isTagAssignModeActive
 	]);
 	const explorer = useExplorerContext();
 	const controlIcon = useKeyMatcher('Meta').icon;
@@ -49,8 +53,8 @@ export const useExplorerTopBarOptions = () => {
 
 					const option = {
 						layout,
-						toolTipLabel: t(`${layout} View`),
-						icon: <Icon className={TOP_BAR_ICON_STYLE} />,
+						toolTipLabel: t(`${layout}_view`),
+						icon: <Icon {...TOP_BAR_ICON_DEFAULT_PROPS} />,
 						keybinds: [controlIcon, (i + 1).toString()],
 						topBarActive:
 							!explorer.isLoadingPreferences && settings.layoutMode === layout,
@@ -74,22 +78,23 @@ export const useExplorerTopBarOptions = () => {
 
 	const controlOptions: ToolOption[] = [
 		{
-			toolTipLabel: 'Explorer display',
-			icon: <SlidersHorizontal className={TOP_BAR_ICON_STYLE} />,
+			toolTipLabel: t('explorer_settings'),
+			icon: <SlidersHorizontal {...TOP_BAR_ICON_DEFAULT_PROPS} />,
 			popOverComponent: <OptionsPanel />,
 			individual: true,
 			showAtResolution: 'sm:flex'
 		},
 		{
-			toolTipLabel: 'Show Inspector',
+			toolTipLabel: t('show_inspector'),
 			keybinds: [controlIcon, 'I'],
 			onClick: () => {
-				explorerStore.showInspector = !showInspector;
+				explorerStore.showInspector = !explorerStore.showInspector;
 			},
 			icon: (
 				<SidebarSimple
-					weight={showInspector ? 'fill' : 'regular'}
-					className={clsx(TOP_BAR_ICON_STYLE, 'scale-x-[-1]')}
+					{...TOP_BAR_ICON_DEFAULT_PROPS}
+					weight={showInspector ? 'fill' : TOP_BAR_ICON_WEIGHT}
+					className={clsx(TOP_BAR_ICON_CLASSLIST, '-scale-x-100')}
 				/>
 			),
 			individual: true,
@@ -120,24 +125,41 @@ export const useExplorerTopBarOptions = () => {
 			showAtResolution: 'xl:flex'
 		},
 		{
-			toolTipLabel: 'Key Manager',
-			icon: <Key className={TOP_BAR_ICON_STYLE} />,
+			toolTipLabel: t('key_manager'),
+			icon: <Key {...TOP_BAR_ICON_DEFAULT_PROPS} />,
 			popOverComponent: <KeyManager />,
 			individual: true,
 			showAtResolution: 'xl:flex'
 		},
 		{
-			toolTipLabel: 'Tag Assign Mode',
+			toolTipLabel: t('assign_tags'),
 			icon: (
-				<Tag weight={tagAssignMode ? 'fill' : 'regular'} className={TOP_BAR_ICON_STYLE} />
+				<Tag
+					{...TOP_BAR_ICON_DEFAULT_PROPS}
+					weight={tagAssignMode ? 'fill' : TOP_BAR_ICON_WEIGHT}
+				/>
 			),
 			// TODO: Assign tag mode is not yet implemented!
-			// onClick: () => (explorerStore.tagAssignMode = !explorerStore.tagAssignMode),
-			onClick: () => toast.info('Coming soon!'),
+			onClick: () =>
+				(explorerStore.isTagAssignModeActive = !explorerStore.isTagAssignModeActive),
+			// TODO: remove once tag-assign-mode impl complete
+			// onClick: () => toast.info('Coming soon!'),
 			topBarActive: tagAssignMode,
 			individual: true,
 			showAtResolution: 'xl:flex'
 		}
+		// {
+		// 	toolTipLabel: 'Tag Assign Mode',
+		// 	icon: (
+		// 		<Tag weight={tagAssignMode ? 'fill' : 'regular'} className={TOP_BAR_ICON_STYLE} />
+		// 	),
+		// 	// TODO: Assign tag mode is not yet implemented!
+		// 	// onClick: () => (explorerStore.tagAssignMode = !explorerStore.tagAssignMode),
+		// 	onClick: () => toast.info(t('coming_soon)),
+		// 	topBarActive: tagAssignMode,
+		// 	individual: true,
+		// 	showAtResolution: 'xl:flex'
+		// }
 	] satisfies ToolOption[];
 
 	return {

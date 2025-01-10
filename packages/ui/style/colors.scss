@@ -10,14 +10,14 @@
 	--color-accent-faint: 208, 100%, 64%;
 	--color-accent-deep: 208, 100%, 47%;
 	// text
-	--color-ink: var(--dark-hue), 0%, 100%;
+	--color-ink: var(--dark-hue), 35%, 92%;
 	--color-ink-dull: var(--dark-hue), 10%, 70%;
 	--color-ink-faint: var(--dark-hue), 10%, 55%;
 	// sidebar
 	--color-sidebar: var(--dark-hue), 15%, 7%;
 	--color-sidebar-box: var(--dark-hue), 15%, 16%;
 	--color-sidebar-line: var(--dark-hue), 15%, 23%;
-	--color-sidebar-ink: var(--dark-hue), 0%, 100%;
+	--color-sidebar-ink: var(--dark-hue), 15%, 92%;
 	--color-sidebar-ink-dull: var(--dark-hue), 10%, 70%;
 	--color-sidebar-ink-faint: var(--dark-hue), 10%, 55%;
 	--color-sidebar-divider: var(--dark-hue), 15%, 17%;
@@ -45,9 +45,9 @@
 	--color-app-slider: var(--dark-hue), 15%, 20%;
 	--color-app-explorer-scrollbar: var(--dark-hue), 20%, 25%;
 	// menu
-	--color-menu: var(--dark-hue), 25%, 5%;
-	--color-menu-line: var(--dark-hue), 15%, 11%;
-	--color-menu-ink: var(--dark-hue), 5%, 100%;
+	--color-menu: var(--dark-hue), 15%, 10%;
+	--color-menu-line: var(--dark-hue), 15%, 14%;
+	--color-menu-ink: var(--dark-hue), 25%, 92%;
 	--color-menu-faint: var(--dark-hue), 5%, 80%;
 	--color-menu-hover: var(--dark-hue), 15%, 30%;
 	--color-menu-selected: var(--dark-hue), 5%, 30%;
@@ -63,16 +63,16 @@
 	--color-accent-faint: 208, 100%, 67%;
 	--color-accent-deep: 208, 100%, 47%;
 	// text
-	--color-ink: var(--light-hue), 5%, 20%;
-	--color-ink-dull: var(--light-hue), 5%, 30%;
-	--color-ink-faint: var(--light-hue), 5%, 40%;
+	--color-ink: var(--light-hue), 5%, 25%;
+	--color-ink-dull: var(--light-hue), 5%, 40%;
+	--color-ink-faint: var(--light-hue), 5%, 60%;
 	// sidebar
 	--color-sidebar: var(--light-hue), 5%, 96%;
 	--color-sidebar-box: var(--light-hue), 5%, 100%;
 	--color-sidebar-line: var(--light-hue), 10%, 85%;
-	--color-sidebar-ink: var(--light-hue), 5%, 20%;
-	--color-sidebar-ink-dull: var(--light-hue), 5%, 30%;
-	--color-sidebar-ink-faint: var(--light-hue), 5%, 40%;
+	--color-sidebar-ink: var(--light-hue), 5%, 25%;
+	--color-sidebar-ink-dull: var(--light-hue), 5%, 35%;
+	--color-sidebar-ink-faint: var(--light-hue), 5%, 45%;
 	--color-sidebar-divider: var(--light-hue), 15%, 93%;
 	--color-sidebar-button: var(--light-hue), 15%, 100%;
 	--color-sidebar-selected: var(--light-hue), 10%, 80%;
@@ -99,7 +99,7 @@
 	--color-app-slider: var(--light-hue), 5%, 95%;
 	--color-app-explorer-scrollbar: var(--light-hue), 5%, 75%;
 	// menu
-	--color-menu: var(--light-hue), 5%, 100%;
+	--color-menu: var(--light-hue), 5%, 98%;
 	--color-menu-line: var(--light-hue), 5%, 95%;
 	--color-menu-ink: var(--light-hue), 5%, 20%;
 	--color-menu-faint: var(--light-hue), 5%, 80%;

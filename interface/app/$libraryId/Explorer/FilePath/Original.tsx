@@ -8,27 +8,29 @@ import {
 	useState,
 	type VideoHTMLAttributes
 } from 'react';
-import { getItemFilePath, useLibraryContext } from '@sd/client';
+import { ObjectKindKey, useLibraryContext } from '@sd/client';
 import i18n from '~/app/I18n';
 import { PDFViewer, TextViewer } from '~/components';
-import { useLocale } from '~/hooks';
+import { useIsDark, useLocale } from '~/hooks';
 import { pdfViewerEnabled } from '~/util/pdfViewer';
 import { usePlatform } from '~/util/Platform';
 
 import { useExplorerContext } from '../Context';
 import { explorerStore } from '../store';
-import { ExplorerItemData } from '../util';
 import { Image } from './Image';
 import { useBlackBars, useSize } from './utils';
 
 interface OriginalRendererProps {
 	src: string;
-	className: string;
-	frameClassName: string;
-	itemData: ExplorerItemData;
-	isDark: boolean;
+	fileId: number | null;
+	locationId: number | null;
+	path: string | null;
+	className?: string;
+	frameClassName?: string;
+	kind: ObjectKindKey;
+	extension: string | null;
 	childClassName?: string;
-	size?: number;
+	magnification?: number;
 	mediaControls?: boolean;
 	frame?: boolean;
 	isSidebarPreview?: boolean;
@@ -36,44 +38,53 @@ interface OriginalRendererProps {
 	blackBars?: boolean;
 	blackBarsSize?: number;
 	onLoad?(): void;
-	onError?(e: ErrorEvent | SyntheticEvent<Element, Event>): void;
 }
 
 export function Original({
-	itemData,
-	filePath,
+	path,
+	fileId,
+	locationId,
 	...props
-}: Omit<OriginalRendererProps, 'src'> & {
-	filePath: ReturnType<typeof getItemFilePath>;
-}) {
-	const [error, setError] = useState(false);
-	if (error) throw new Error('onError');
+}: Omit<OriginalRendererProps, 'src'>) {
+	const [error, setError] = useState<Error | null>(null);
+	if (error != null) throw error;
 
 	const Renderer = useMemo(() => {
-		const kind = originalRendererKind(itemData);
+		const kind = originalRendererKind(props.kind, props.extension);
 		return ORIGINAL_RENDERERS[kind];
-	}, [itemData]);
+	}, [props.kind, props.extension]);
 
 	if (!Renderer) throw new Error('no renderer!');
 
 	const platform = usePlatform();
 	const { library } = useLibraryContext();
 	const { parent } = useExplorerContext();
+	locationId = locationId ?? (parent?.type === 'Location' ? parent.location.id : null);
 
 	const src = useMemo(() => {
-		const locationId =
-			itemData.locationId ?? (parent?.type === 'Location' ? parent.location.id : null);
-
-		if (filePath && (itemData.extension !== 'pdf' || pdfViewerEnabled())) {
-			if ('id' in filePath && locationId)
-				return platform.getFileUrl(library.uuid, locationId, filePath.id);
-			else if ('path' in filePath) return platform.getFileUrlByPath(filePath.path);
+		if (props.extension !== 'pdf' || pdfViewerEnabled()) {
+			if (fileId != null && locationId)
+				return platform.getFileUrl(library.uuid, locationId, fileId);
+			else if (path) return platform.getFileUrlByPath(path);
 		}
-	}, [itemData, filePath, library.uuid, parent, platform]);
+	}, [props.extension, fileId, locationId, platform, library.uuid, path]);
 
 	if (src === undefined) throw new Error('no src!');
 
-	return <Renderer src={src} itemData={itemData} onError={() => setError(true)} {...props} />;
+	return (
+		<Renderer
+			src={src}
+			onError={(event) =>
+				setError(
+					('error' in event && event.error instanceof Error && event.error) ||
+						new Error(
+							('message' in event && event.message) || 'Filetype is not supported yet'
+						)
+				)
+			}
+			{...props}
+		/>
+	);
 }
 
 const TEXT_RENDERER: OriginalRenderer = (props) => (
@@ -82,24 +93,26 @@ const TEXT_RENDERER: OriginalRenderer = (props) => (
 		onLoad={props.onLoad}
 		onError={props.onError}
 		className={clsx(
-			'textviewer-scroll h-full w-full overflow-y-auto whitespace-pre-wrap break-words px-4 font-mono',
+			'textviewer-scroll font-mono size-full overflow-y-auto whitespace-pre-wrap break-words px-4',
 			!props.mediaControls ? 'overflow-hidden' : 'overflow-auto',
 			props.className,
 			props.frame && [props.frameClassName, '!bg-none p-2']
 		)}
 		codeExtension={
-			((props.itemData.kind === 'Code' || props.itemData.kind === 'Config') &&
-				props.itemData.extension) ||
-			''
+			((props.kind === 'Code' || props.kind === 'Config') && props.extension) || ''
 		}
 		isSidebarPreview={props.isSidebarPreview}
 	/>
 );
 
-type OriginalRenderer = (props: OriginalRendererProps) => JSX.Element;
+type OriginalRenderer = (
+	props: Omit<OriginalRendererProps, 'fileId' | 'locationId' | 'path'> & {
+		onError?(e: ErrorEvent | SyntheticEvent<Element, Event>): void;
+	}
+) => JSX.Element;
 
-function originalRendererKind(itemData: ExplorerItemData) {
-	return itemData.extension === 'pdf' ? 'PDF' : itemData.kind;
+function originalRendererKind(kind: ObjectKindKey, extension: string | null) {
+	return extension === 'pdf' ? 'PDF' : kind;
 }
 
 type OriginalRendererKind = ReturnType<typeof originalRendererKind>;
@@ -112,7 +125,7 @@ const ORIGINAL_RENDERERS: {
 			src={props.src}
 			onLoad={props.onLoad}
 			onError={props.onError}
-			className={clsx('h-full w-full', props.className, props.frame && props.frameClassName)}
+			className={clsx('size-full', props.className, props.frame && props.frameClassName)}
 			crossOrigin="anonymous" // Here it is ok, because it is not a react attr
 		/>
 	),
@@ -134,45 +147,53 @@ const ORIGINAL_RENDERERS: {
 			)}
 		/>
 	),
-	Audio: (props) => (
-		<>
-			<img
-				src={getIcon(iconNames.Audio, props.isDark, props.itemData.extension)}
-				onLoad={props.onLoad}
-				decoding={props.size ? 'async' : 'sync'}
-				className={props.childClassName}
-				draggable={false}
-			/>
-			{props.mediaControls && (
-				<audio
-					// Order matter for crossOrigin attr
-					crossOrigin="anonymous"
-					src={props.src}
-					onError={props.onError}
-					controls
-					autoPlay
-					className="absolute left-2/4 top-full w-full -translate-x-1/2 translate-y-[-150%]"
-				>
-					<p>{i18n.t('audio_preview_not_supported')}</p>
-				</audio>
-			)}
-		</>
-	),
+	Audio: (props) => {
+		const isDark = useIsDark();
+		return (
+			<>
+				<img
+					src={getIcon(iconNames.Audio, isDark, props.extension)}
+					onLoad={props.onLoad}
+					decoding="sync"
+					className={props.childClassName}
+					draggable={false}
+				/>
+				{props.mediaControls && (
+					<audio
+						// Order matter for crossOrigin attr
+						crossOrigin="anonymous"
+						src={props.src}
+						onError={props.onError}
+						controls
+						autoPlay
+						className="absolute left-2/4 top-full w-full -translate-x-1/2 translate-y-[-150%]"
+					>
+						<p>{i18n.t('audio_preview_not_supported')}</p>
+					</audio>
+				)}
+			</>
+		);
+	},
 	Image: (props) => {
 		const ref = useRef<HTMLImageElement>(null);
-		const size = useSize(ref);
 
 		return (
-			<Image
-				ref={ref}
-				src={props.src}
-				size={size}
-				onLoad={props.onLoad}
-				onError={props.onError}
-				decoding={props.size ? 'async' : 'sync'}
-				className={clsx(props.className, props.frameClassName)}
-				crossOrigin="anonymous" // Here it is ok, because it is not a react attr
-			/>
+			<div className="custom-scroll quick-preview-images-scroll flex size-full justify-center transition-all">
+				<Image
+					ref={ref}
+					src={props.src}
+					style={{ transform: `scale(${props.magnification})` }}
+					onLoad={props.onLoad}
+					onError={props.onError}
+					decoding="async"
+					className={clsx(
+						props.className,
+						props.frameClassName,
+						'origin-center transition-transform'
+					)}
+					crossOrigin="anonymous" // Here it is ok, because it is not a react attr
+				/>
+			</div>
 		);
 	}
 };
@@ -184,14 +205,24 @@ interface VideoProps extends VideoHTMLAttributes<HTMLVideoElement> {
 }
 
 const Video = ({ paused, blackBars, blackBarsSize, className, ...props }: VideoProps) => {
-	const ref = useRef<HTMLVideoElement>(null);
-	const size = useSize(ref);
-	const { style: blackBarsStyle } = useBlackBars(size, blackBarsSize);
 	const { t } = useLocale();
+
+	const ref = useRef<HTMLVideoElement>(null);
+
+	const size = useSize(ref);
+
+	const { style: blackBarsStyle } = useBlackBars(ref, size, {
+		size: blackBarsSize,
+		disabled: !blackBars
+	});
 
 	useEffect(() => {
 		if (!ref.current) return;
-		paused ? ref.current.pause() : ref.current.play();
+		if (paused) {
+			ref.current.pause();
+		} else {
+			ref.current.play();
+		}
 	}, [paused]);
 
 	return (
@@ -214,7 +245,7 @@ const Video = ({ paused, blackBars, blackBarsSize, className, ...props }: VideoP
 			}}
 			playsInline
 			draggable={false}
-			style={{ ...(blackBars ? blackBarsStyle : {}) }}
+			style={{ ...blackBarsStyle }}
 			className={clsx(blackBars && size.width === 0 && 'invisible', className)}
 			{...props}
 			key={props.src}

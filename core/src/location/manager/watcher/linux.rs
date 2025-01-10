@@ -17,42 +17,47 @@ use std::{
 	sync::Arc,
 };
 
-use async_trait::async_trait;
 use notify::{
 	event::{CreateKind, DataChange, ModifyKind, RenameMode},
 	Event, EventKind,
 };
 use tokio::{fs, time::Instant};
-use tracing::{error, trace};
+use tracing::{error, instrument, trace};
 
 use super::{
 	utils::{create_dir, recalculate_directories_size, remove, rename, update_file},
-	EventHandler, HUNDRED_MILLIS, ONE_SECOND,
+	HUNDRED_MILLIS, ONE_SECOND,
 };
 
 #[derive(Debug)]
-pub(super) struct LinuxEventHandler<'lib> {
+pub(super) struct EventHandler {
 	location_id: location::id::Type,
-	library: &'lib Arc<Library>,
-	node: &'lib Arc<Node>,
+	location_pub_id: location::pub_id::Type,
+	library: Arc<Library>,
+	node: Arc<Node>,
 	last_events_eviction_check: Instant,
 	rename_from: HashMap<PathBuf, Instant>,
 	recently_renamed_from: BTreeMap<PathBuf, Instant>,
 	files_to_update: HashMap<PathBuf, Instant>,
 	reincident_to_update_files: HashMap<PathBuf, Instant>,
 	to_recalculate_size: HashMap<PathBuf, Instant>,
+
 	path_and_instant_buffer: Vec<(PathBuf, Instant)>,
 }
 
-#[async_trait]
-impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
+impl super::EventHandler for EventHandler {
 	fn new(
 		location_id: location::id::Type,
-		library: &'lib Arc<Library>,
-		node: &'lib Arc<Node>,
-	) -> Self {
+		location_pub_id: location::pub_id::Type,
+		library: Arc<Library>,
+		node: Arc<Node>,
+	) -> Self
+	where
+		Self: Sized,
+	{
 		Self {
 			location_id,
+			location_pub_id,
 			library,
 			node,
 			last_events_eviction_check: Instant::now(),
@@ -65,8 +70,19 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 		}
 	}
 
+	#[instrument(
+		skip_all,
+		fields(
+			location_id = %self.location_id,
+			library_id = %self.library.id,
+			waiting_rename_count = %self.recently_renamed_from.len(),
+			waiting_update_count = %self.files_to_update.len(),
+			reincident_to_update_files_count = %self.reincident_to_update_files.len(),
+			waiting_size_count = %self.to_recalculate_size.len(),
+		),
+	)]
 	async fn handle_event(&mut self, event: Event) -> Result<(), LocationManagerError> {
-		trace!("Received Linux event: {:#?}", event);
+		trace!("Received Linux event");
 
 		let Event {
 			kind, mut paths, ..
@@ -75,12 +91,13 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 		match kind {
 			EventKind::Create(CreateKind::File)
 			| EventKind::Modify(ModifyKind::Data(DataChange::Any)) => {
-				// When we receive a create, modify data or metadata events of the abore kinds
+				// When we receive a create, modify data or metadata events of the above kinds
 				// we just mark the file to be updated in a near future
 				// each consecutive event of these kinds that we receive for the same file
 				// we just store the path again in the map below, with a new instant
 				// that effectively resets the timer for the file to be updated
 				let path = paths.remove(0);
+
 				if self.files_to_update.contains_key(&path) {
 					if let Some(old_instant) =
 						self.files_to_update.insert(path.clone(), Instant::now())
@@ -95,24 +112,25 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 			}
 
 			EventKind::Create(CreateKind::Folder) => {
-				let path = &paths[0];
+				let path = paths.remove(0);
 
 				// Don't need to dispatch a recalculate directory event as `create_dir` dispatches
 				// a `scan_location_sub_path` function, which recalculates the size already
 
 				create_dir(
 					self.location_id,
-					path,
-					&fs::metadata(path)
+					&path,
+					&fs::metadata(&path)
 						.await
-						.map_err(|e| FileIOError::from((path, e)))?,
-					self.node,
-					self.library,
+						.map_err(|e| FileIOError::from((&path, e)))?,
+					&self.node,
+					&self.library,
 				)
 				.await?;
 			}
+
 			EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
-				// Just in case we can't garantee that we receive the Rename From event before the
+				// Just in case we can't guarantee that we receive the Rename From event before the
 				// Rename Both event. Just a safeguard
 				if self.recently_renamed_from.remove(&paths[0]).is_none() {
 					self.rename_from.insert(paths.remove(0), Instant::now());
@@ -120,23 +138,24 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 			}
 
 			EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-				let from_path = &paths[0];
-				let to_path = &paths[1];
+				let to_path = paths.remove(1);
+				let from_path = paths.remove(0);
 
-				self.rename_from.remove(from_path);
+				self.rename_from.remove(&from_path);
 				rename(
 					self.location_id,
-					to_path,
-					from_path,
-					fs::metadata(to_path)
+					&to_path,
+					&from_path,
+					fs::metadata(&to_path)
 						.await
-						.map_err(|e| FileIOError::from((to_path, e)))?,
-					self.library,
+						.map_err(|e| FileIOError::from((&to_path, e)))?,
+					&self.library,
 				)
 				.await?;
-				self.recently_renamed_from
-					.insert(paths.swap_remove(0), Instant::now());
+
+				self.recently_renamed_from.insert(from_path, Instant::now());
 			}
+
 			EventKind::Remove(_) => {
 				let path = paths.remove(0);
 				if let Some(parent) = path.parent() {
@@ -146,10 +165,11 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 					}
 				}
 
-				remove(self.location_id, &path, self.library).await?;
+				remove(self.location_id, &path, &self.library).await?;
 			}
-			other_event_kind => {
-				trace!("Other Linux event that we don't handle for now: {other_event_kind:#?}");
+
+			_ => {
+				trace!("Other Linux event that we don't handle for now");
 			}
 		}
 
@@ -159,11 +179,14 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 	async fn tick(&mut self) {
 		if self.last_events_eviction_check.elapsed() > HUNDRED_MILLIS {
 			if let Err(e) = self.handle_to_update_eviction().await {
-				error!("Error while handling recently created or update files eviction: {e:#?}");
+				error!(
+					?e,
+					"Error while handling recently created or update files eviction;"
+				);
 			}
 
 			if let Err(e) = self.handle_rename_from_eviction().await {
-				error!("Failed to remove file_path: {e:#?}");
+				error!(?e, "Failed to remove file_path;");
 			}
 
 			self.recently_renamed_from
@@ -174,11 +197,12 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 					&mut self.to_recalculate_size,
 					&mut self.path_and_instant_buffer,
 					self.location_id,
-					self.library,
+					self.location_pub_id.clone(),
+					&self.library,
 				)
 				.await
 				{
-					error!("Failed to recalculate directories size: {e:#?}");
+					error!(?e, "Failed to recalculate directories size;");
 				}
 			}
 
@@ -187,9 +211,10 @@ impl<'lib> EventHandler<'lib> for LinuxEventHandler<'lib> {
 	}
 }
 
-impl LinuxEventHandler<'_> {
+impl EventHandler {
 	async fn handle_to_update_eviction(&mut self) -> Result<(), LocationManagerError> {
 		self.path_and_instant_buffer.clear();
+
 		let mut should_invalidate = false;
 
 		for (path, created_at) in self.files_to_update.drain() {
@@ -202,8 +227,11 @@ impl LinuxEventHandler<'_> {
 							.insert(parent.to_path_buf(), Instant::now());
 					}
 				}
+
 				self.reincident_to_update_files.remove(&path);
-				update_file(self.location_id, &path, self.node, self.library).await?;
+
+				update_file(self.location_id, &path, &self.node, &self.library).await?;
+
 				should_invalidate = true;
 			}
 		}
@@ -226,8 +254,11 @@ impl LinuxEventHandler<'_> {
 							.insert(parent.to_path_buf(), Instant::now());
 					}
 				}
+
 				self.files_to_update.remove(&path);
-				update_file(self.location_id, &path, self.node, self.library).await?;
+
+				update_file(self.location_id, &path, &self.node, &self.library).await?;
+
 				should_invalidate = true;
 			}
 		}
@@ -244,6 +275,7 @@ impl LinuxEventHandler<'_> {
 
 	async fn handle_rename_from_eviction(&mut self) -> Result<(), LocationManagerError> {
 		self.path_and_instant_buffer.clear();
+
 		let mut should_invalidate = false;
 
 		for (path, instant) in self.rename_from.drain() {
@@ -254,9 +286,12 @@ impl LinuxEventHandler<'_> {
 							.insert(parent.to_path_buf(), Instant::now());
 					}
 				}
-				remove(self.location_id, &path, self.library).await?;
+
+				remove(self.location_id, &path, &self.library).await?;
+
 				should_invalidate = true;
-				trace!("Removed file_path due timeout: {}", path.display());
+
+				trace!(path = %path.display(), "Removed file_path due timeout;");
 			} else {
 				self.path_and_instant_buffer.push((path, instant));
 			}
@@ -266,9 +301,8 @@ impl LinuxEventHandler<'_> {
 			invalidate_query!(self.library, "search.paths");
 		}
 
-		for (path, instant) in self.path_and_instant_buffer.drain(..) {
-			self.rename_from.insert(path, instant);
-		}
+		self.rename_from
+			.extend(self.path_and_instant_buffer.drain(..));
 
 		Ok(())
 	}

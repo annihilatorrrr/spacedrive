@@ -7,6 +7,9 @@ function alpha(variableName) {
 }
 
 module.exports = function (app, options) {
+	/**
+	 * @type {import('tailwindcss').Config}
+	 */
 	let config = {
 		content: [
 			`../../apps/${app}/src/**/*.{ts,tsx,html,stories.tsx}`,
@@ -20,8 +23,11 @@ module.exports = function (app, options) {
 				sm: '650px',
 				md: '868px',
 				lg: '1024px',
-				xl: '1280px',
-				...defaultTheme.screens
+				xl: '1280px'
+			},
+			fontFamily: {
+				sans: [...defaultTheme.fontFamily.sans],
+				plex: ['IBM Plex Sans', ...defaultTheme.fontFamily.sans]
 			},
 			fontSize: {
 				'tiny': '.65rem',
@@ -170,6 +176,12 @@ module.exports = function (app, options) {
 			require('@tailwindcss/typography')
 		]
 	};
+
+	if (app === 'landing') {
+		console.log('CONFIGURING TAILWIND for Landing');
+		config.theme.fontFamily.sans = ['var(--font-inter)', ...defaultTheme.fontFamily.sans];
+		config.theme.fontFamily.plex = ['var(--font-plex-sans)', ...defaultTheme.fontFamily.sans];
+	}
 
 	return config;
 };

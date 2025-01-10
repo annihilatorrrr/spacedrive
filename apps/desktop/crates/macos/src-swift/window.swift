@@ -1,47 +1,84 @@
 import AppKit
+import SwiftRs
 
 @objc
 public enum AppThemeType: Int {
-  case auto = -1
-  case light = 0
-  case dark = 1
+    case auto = -1
+    case light = 0
+    case dark = 1
+}
+
+private let activityLock = NSLock()
+private var activity: NSObjectProtocol?
+private var isThemeUpdating = false
+
+@_cdecl("disable_app_nap")
+public func disableAppNap(reason: SRString) -> Bool {
+    activityLock.lock()
+    defer { activityLock.unlock() }
+
+    guard activity == nil else {
+        return false
+    }
+
+    activity = ProcessInfo.processInfo.beginActivity(
+        options: .userInitiatedAllowingIdleSystemSleep,
+        reason: reason.toString()
+    )
+    return true
+}
+
+@_cdecl("enable_app_nap")
+public func enableAppNap() -> Bool {
+    activityLock.lock()
+    defer { activityLock.unlock() }
+
+    guard let currentActivity = activity else {
+        return false
+    }
+
+    ProcessInfo.processInfo.endActivity(currentActivity)
+    activity = nil
+    return true
 }
 
 @_cdecl("lock_app_theme")
 public func lockAppTheme(themeType: AppThemeType) {
-  var theme: NSAppearance?
-  switch themeType {
-  case .auto:
-    theme = nil
-  case .dark:
-    theme = NSAppearance(named: .darkAqua)!
-  case .light:
-    theme = NSAppearance(named: .aqua)!
-  }
-
-  DispatchQueue.main.async {
-    NSApp.appearance = theme
-
-    // Trigger a repaint of the window
-    if let window = NSApplication.shared.mainWindow {
-      window.invalidateShadow()
-      window.displayIfNeeded()
+    // Prevent concurrent theme updates
+    guard !isThemeUpdating else {
+        return
     }
-  }
-}
 
-@_cdecl("blur_window_background")
-public func blurWindowBackground(window: NSWindow) {
-  let windowContent = window.contentView!
-  let blurryView = NSVisualEffectView()
+    isThemeUpdating = true
 
-  blurryView.material = .sidebar
-  blurryView.state = .followsWindowActiveState
-  blurryView.blendingMode = .behindWindow
-  blurryView.wantsLayer = true
+    let theme: NSAppearance?
+    switch themeType {
+    case .auto:
+        theme = nil
+    case .dark:
+        theme = NSAppearance(named: .darkAqua)
+    case .light:
+        theme = NSAppearance(named: .aqua)
+    }
 
-  window.contentView = blurryView
-  blurryView.addSubview(windowContent)
+    // Use sync to ensure completion before return
+    DispatchQueue.main.sync {
+        autoreleasepool {
+            NSApp.appearance = theme
+
+            if let window = NSApplication.shared.mainWindow {
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0
+                    window.invalidateShadow()
+                    window.displayIfNeeded()
+                }, completionHandler: {
+                    isThemeUpdating = false
+                })
+            } else {
+                isThemeUpdating = false
+            }
+        }
+    }
 }
 
 @_cdecl("set_titlebar_style")

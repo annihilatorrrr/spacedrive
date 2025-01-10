@@ -4,6 +4,7 @@ button {
 }
 
 body {
+	@apply cursor-default;
 	-webkit-user-select: none;
 	// font-family: 'InterVariable', sans-serif;
 }
@@ -103,7 +104,6 @@ body {
 
 .custom-scroll {
 	-ms-overflow-style: none; /* for Internet Explorer, Edge */
-	scrollbar-width: none; /* for Firefox */
 	overflow-y: scroll;
 }
 
@@ -113,8 +113,8 @@ body {
 
 .explorer-scroll {
 	&::-webkit-scrollbar {
-		height: 6px;
-		width: 6px;
+		height: var(--scrollbar-height);
+		width: var(--scrollbar-width);
 	}
 	&::-webkit-scrollbar-track {
 		@apply rounded-[6px] bg-transparent;
@@ -129,13 +129,13 @@ body {
 .default-scroll {
 	&::-webkit-scrollbar {
 		height: 6px;
-		width: 8px;
+		width: 6px;
 	}
 	&::-webkit-scrollbar-track {
 		@apply rounded-[6px] bg-transparent;
 	}
 	&::-webkit-scrollbar-thumb {
-		@apply rounded-[6px] bg-app-box;
+		@apply rounded-[6px] bg-app-explorerScrollbar;
 	}
 }
 .page-scroll {
@@ -144,7 +144,7 @@ body {
 		width: 8px;
 	}
 	&::-webkit-scrollbar-track {
-		@apply rounded-[6px]  bg-transparent;
+		@apply rounded-[6px] bg-transparent;
 	}
 	&::-webkit-scrollbar-thumb {
 		@apply rounded-[6px] bg-app-box;
@@ -156,7 +156,7 @@ body {
 		width: 8px;
 	}
 	&::-webkit-scrollbar-track {
-		@apply mt-[46px] rounded-[6px]  bg-transparent;
+		@apply mt-[46px] rounded-[6px] bg-transparent;
 	}
 	&::-webkit-scrollbar-thumb {
 		@apply rounded-[6px] bg-app-box;
@@ -168,7 +168,7 @@ body {
 		width: 8px;
 	}
 	&::-webkit-scrollbar-track {
-		@apply rounded-[6px]  bg-transparent;
+		@apply rounded-[6px] bg-transparent;
 	}
 	&::-webkit-scrollbar-thumb {
 		@apply rounded-[6px] bg-white/20;
@@ -180,7 +180,7 @@ body {
 		width: 8px;
 	}
 	&::-webkit-scrollbar-track {
-		@apply my-[2px] rounded-[6px]  bg-transparent;
+		@apply my-[2px] rounded-[6px] bg-transparent;
 	}
 	&::-webkit-scrollbar-thumb {
 		@apply rounded-[6px] bg-app-shade/20;
@@ -401,3 +401,25 @@ body {
 	animation: wiggle 200ms infinite;
 }
 
+// sparkles
+
+@keyframes comeInOut {
+	0% {
+		transform: scale(0);
+	}
+	50% {
+		transform: scale(1);
+	}
+	100% {
+		transform: scale(0);
+	}
+}
+
+@keyframes spin {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(180deg);
+	}
+}

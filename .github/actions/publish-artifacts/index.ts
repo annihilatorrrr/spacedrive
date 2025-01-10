@@ -1,68 +1,86 @@
-import * as artifact from '@actions/artifact';
+import client from '@actions/artifact';
 import * as core from '@actions/core';
 import * as glob from '@actions/glob';
 import * as io from '@actions/io';
+import { exists } from '@actions/io/lib/io-util';
 
 type OS = 'darwin' | 'windows' | 'linux';
 type Arch = 'x64' | 'arm64';
-type TargetConfig = { bundle: string; ext: string };
-type BuildTarget = {
-	updater: TargetConfig;
-	standalone: Array<TargetConfig>;
-};
+
+interface TargetConfig {
+	ext: string;
+	bundle: string;
+}
+
+interface BuildTarget {
+	updater: false | { bundle: string; bundleExt: string; archiveExt: string };
+	standalone: TargetConfig[];
+}
 
 const OS_TARGETS = {
 	darwin: {
 		updater: {
 			bundle: 'macos',
-			ext: 'app.tar.gz'
+			bundleExt: 'app',
+			archiveExt: 'tar.gz'
 		},
 		standalone: [{ ext: 'dmg', bundle: 'dmg' }]
 	},
 	windows: {
 		updater: {
 			bundle: 'msi',
-			ext: 'msi.zip'
+			bundleExt: 'msi',
+			archiveExt: 'zip'
 		},
 		standalone: [{ ext: 'msi', bundle: 'msi' }]
 	},
 	linux: {
-		updater: {
-			bundle: 'appimage',
-			ext: 'AppImage.tar.gz'
-		},
-		standalone: [
-			{ ext: 'deb', bundle: 'deb' },
-			{ ext: 'AppImage', bundle: 'appimage' }
-		]
+		updater: false,
+		standalone: [{ ext: 'deb', bundle: 'deb' }]
 	}
 } satisfies Record<OS, BuildTarget>;
 
 // Workflow inputs
-const OS: OS = core.getInput('os') as any;
-const ARCH: Arch = core.getInput('arch') as any;
+const OS = core.getInput('os') as OS;
+const ARCH = core.getInput('arch') as Arch;
 const TARGET = core.getInput('target');
 const PROFILE = core.getInput('profile');
 
 const BUNDLE_DIR = `target/${TARGET}/${PROFILE}/bundle`;
 const ARTIFACTS_DIR = '.artifacts';
 const ARTIFACT_BASE = `Spacedrive-${OS}-${ARCH}`;
+const FRONT_END_BUNDLE = 'apps/desktop/dist.tar.xz';
 const UPDATER_ARTIFACT_NAME = `Spacedrive-Updater-${OS}-${ARCH}`;
-
-const client = artifact.create();
+const FRONTEND_ARCHIVE_NAME = `Spacedrive-frontend-${OS}-${ARCH}`;
 
 async function globFiles(pattern: string) {
 	const globber = await glob.create(pattern);
 	return await globber.glob();
 }
 
-async function uploadUpdater({ bundle, ext }: TargetConfig) {
-	const files = await globFiles(`${BUNDLE_DIR}/${bundle}/*.${ext}*`);
+async function uploadFrontend() {
+	if (!(await exists(FRONT_END_BUNDLE))) {
+		console.error(`Frontend archive not found`);
+		return;
+	}
 
-	const updaterPath = files.find((file) => file.endsWith(ext));
-	if (!updaterPath) return console.error(`Updater path not found. Files: ${files}`);
+	const artifactName = `${FRONTEND_ARCHIVE_NAME}.tar.xz`;
+	const artifactPath = `${ARTIFACTS_DIR}/${artifactName}`;
 
-	const artifactPath = `${ARTIFACTS_DIR}/${UPDATER_ARTIFACT_NAME}.${ext}`;
+	await io.cp(FRONT_END_BUNDLE, artifactPath);
+	await client.uploadArtifact(artifactName, [artifactPath], ARTIFACTS_DIR);
+}
+
+async function uploadUpdater(updater: BuildTarget['updater']) {
+	if (!updater) return;
+	const { bundle, bundleExt, archiveExt } = updater;
+	const fullExt = `${bundleExt}.${archiveExt}`;
+	const files = await globFiles(`${BUNDLE_DIR}/${bundle}/*.${fullExt}*`);
+
+	const updaterPath = files.find((file) => file.endsWith(fullExt));
+	if (!updaterPath) throw new Error(`Updater path not found. Files: ${files.join(',')}`);
+
+	const artifactPath = `${ARTIFACTS_DIR}/${UPDATER_ARTIFACT_NAME}.${archiveExt}`;
 
 	// https://tauri.app/v1/guides/distribution/updater#update-artifacts
 	await io.cp(updaterPath, artifactPath);
@@ -79,7 +97,7 @@ async function uploadStandalone({ bundle, ext }: TargetConfig) {
 	const files = await globFiles(`${BUNDLE_DIR}/${bundle}/*.${ext}*`);
 
 	const standalonePath = files.find((file) => file.endsWith(ext));
-	if (!standalonePath) return console.error(`Standalone path not found. Files: ${files}`);
+	if (!standalonePath) throw new Error(`Standalone path not found. Files: ${files.join(',')}`);
 
 	const artifactName = `${ARTIFACT_BASE}.${ext}`;
 	const artifactPath = `${ARTIFACTS_DIR}/${artifactName}`;
@@ -93,10 +111,14 @@ async function run() {
 
 	const { updater, standalone } = OS_TARGETS[OS];
 
-	await uploadUpdater(updater);
-
-	for (const config of standalone) {
-		await uploadStandalone(config);
-	}
+	await Promise.all([
+		uploadUpdater(updater),
+		uploadFrontend(),
+		...standalone.map((config) => uploadStandalone(config))
+	]);
 }
-run();
+
+run().catch((error: unknown) => {
+	console.error(error);
+	process.exit(1);
+});

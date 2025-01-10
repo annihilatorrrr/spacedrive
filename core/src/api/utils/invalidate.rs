@@ -55,7 +55,6 @@ impl InvalidateOperationEvent {
 
 /// a request to invalidate a specific resource
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) struct InvalidationRequest {
 	pub key: &'static str,
 	pub arg_ty: Option<DataType>,
@@ -65,13 +64,11 @@ pub(crate) struct InvalidationRequest {
 
 /// invalidation request for a specific resource
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 pub(crate) struct InvalidRequests {
 	pub queries: Vec<InvalidationRequest>,
 }
 
 impl InvalidRequests {
-	#[allow(unused)]
 	const fn new() -> Self {
 		Self {
 			queries: Vec::new(),
@@ -124,6 +121,7 @@ impl InvalidRequests {
 }
 
 /// `invalidate_query` is a macro which stores a list of all of it's invocations so it can ensure all of the queries match the queries attached to the router.
+///
 /// This allows invalidate to be type-safe even when the router keys are stringly typed.
 /// ```ignore
 /// invalidate_query!(
@@ -135,6 +133,19 @@ impl InvalidRequests {
 #[macro_export]
 // #[allow(clippy::crate_in_macro_def)]
 macro_rules! invalidate_query {
+
+	($ctx:expr, $query:ident) => {{
+		let ctx: &$crate::library::Library = &$ctx; // Assert the context is the correct type
+		let query: &'static str = $query;
+
+		::tracing::trace!(target: "sd_core::invalidate-query", "invalidate_query!(\"{}\") at {}", query, concat!(file!(), ":", line!()));
+
+		// The error are ignored here because they aren't mission critical. If they fail the UI might be outdated for a bit.
+		ctx.emit($crate::api::CoreEvent::InvalidateOperation(
+			$crate::api::utils::InvalidateOperationEvent::dangerously_create(query, serde_json::Value::Null, None)
+		))
+	}};
+
 	($ctx:expr, $key:literal) => {{
 		let ctx: &$crate::library::Library = &$ctx; // Assert the context is the correct type
 
@@ -327,8 +338,12 @@ pub(crate) fn mount_invalidate() -> AlphaRouter<Ctx> {
 								) => {
 									let key = match to_key(&(key, arg)) {
 										Ok(key) => key,
-										Err(err) => {
-											warn!("Error deriving key for invalidate operation '{:?}': {:?}", first_event, err);
+										Err(e) => {
+											warn!(
+												?first_event,
+												?e,
+												"Error deriving key for invalidate operation;"
+											);
 											continue;
 										}
 									};
@@ -348,7 +363,10 @@ pub(crate) fn mount_invalidate() -> AlphaRouter<Ctx> {
 								}
 								event = event_bus_rx.recv() => {
 									let Ok(event) = event else {
-										warn!("Shutting down invalidation manager thread due to the core event bus being dropped!");
+										warn!(
+											"Shutting down invalidation manager thread \
+											due to the core event bus being dropped!"
+										);
 										break;
 									};
 
@@ -362,8 +380,12 @@ pub(crate) fn mount_invalidate() -> AlphaRouter<Ctx> {
 												Ok(key) => {
 													buf.insert(key, op);
 												},
-												Err(err) => {
-													warn!("Error deriving key for invalidate operation '{:?}': {:?}", op, err);
+												Err(e) => {
+													warn!(
+														?op,
+														?e,
+														"Error deriving key for invalidate operation;",
+													);
 												},
 											}
 										},
@@ -386,7 +408,10 @@ pub(crate) fn mount_invalidate() -> AlphaRouter<Ctx> {
 							Ok(_) => {}
 							// All receivers are shutdown means that all clients are disconnected.
 							Err(_) => {
-								debug!("Shutting down invalidation manager! This is normal if all clients disconnects.");
+								debug!(
+									"Shutting down invalidation manager! \
+									This is normal if all clients disconnects."
+								);
 								manager_thread_active.swap(false, Ordering::Relaxed);
 								break;
 							}

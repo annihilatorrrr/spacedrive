@@ -2,12 +2,12 @@ import { ArrowLeft, ArrowRight, Info } from '@phosphor-icons/react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { iconNames } from '@sd/assets/util';
 import clsx from 'clsx';
-import { memo, Suspense, useDeferredValue, useMemo } from 'react';
+import { memo, Suspense, useCallback, useDeferredValue, useEffect, useMemo } from 'react';
 import {
 	ExplorerItem,
 	getExplorerItemData,
+	nonIndexedPathOrderingSchema,
 	useLibraryContext,
-	useNormalisedCache,
 	useUnsafeStreamedQuery,
 	type EphemeralPathOrder
 } from '@sd/client';
@@ -27,16 +27,12 @@ import { useRouteTitle } from '~/hooks/useRouteTitle';
 
 import Explorer from './Explorer';
 import { ExplorerContextProvider } from './Explorer/Context';
-import {
-	createDefaultExplorerSettings,
-	explorerStore,
-	nonIndexedPathOrderingSchema
-} from './Explorer/store';
+import { createDefaultExplorerSettings, explorerStore } from './Explorer/store';
 import { DefaultTopBarOptions } from './Explorer/TopBarOptions';
 import { useExplorer, useExplorerSettings } from './Explorer/useExplorer';
 import { EmptyNotice } from './Explorer/View/EmptyNotice';
 import { AddLocationButton } from './settings/library/locations/AddLocationButton';
-import { useTopBarContext } from './TopBar/Layout';
+import { useTopBarContext } from './TopBar/Context';
 import { TopBarPortal } from './TopBar/Portal';
 import TopBarButton from './TopBar/TopBarButton';
 
@@ -59,21 +55,19 @@ const NOTICE_ITEMS: { icon: keyof typeof iconNames; name: string }[] = [
 	}
 ];
 
-const EphemeralNotice = ({ path }: { path: string }) => {
+const EphemeralNotice = memo(({ path }: { path: string }) => {
 	const { t } = useLocale();
-
 	const isDark = useIsDark();
 	const { ephemeral: dismissed } = useDismissibleNoticeStore();
-
 	const topbar = useTopBarContext();
 
-	const dismiss = () => (getDismissibleNoticeStore().ephemeral = true);
+	const dismiss = useCallback(() => (getDismissibleNoticeStore().ephemeral = true), []);
 
 	return (
 		<Dialog.Root open={!dismissed}>
 			<Dialog.Portal>
 				<Dialog.Overlay className="fixed inset-0 z-50 bg-app/80 backdrop-blur-sm radix-state-closed:animate-out radix-state-closed:fade-out-0 radix-state-open:animate-in radix-state-open:fade-in-0" />
-				<Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-96 translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-md border border-app-line bg-app shadow-lg outline-none duration-200 radix-state-closed:animate-out radix-state-closed:fade-out-0 radix-state-closed:zoom-out-95 radix-state-closed:slide-out-to-left-1/2 radix-state-closed:slide-out-to-top-[48%] radix-state-open:animate-in radix-state-open:fade-in-0 radix-state-open:zoom-in-95 radix-state-open:slide-in-from-left-1/2 radix-state-open:slide-in-from-top-[48%]">
+				<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-96 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-md border border-app-line bg-app shadow-lg outline-none duration-200 radix-state-closed:animate-out radix-state-closed:fade-out-0 radix-state-closed:zoom-out-95 radix-state-closed:slide-out-to-left-1/2 radix-state-closed:slide-out-to-top-[48%] radix-state-open:animate-in radix-state-open:fade-in-0 radix-state-open:zoom-in-95 radix-state-open:slide-in-from-left-1/2 radix-state-open:slide-in-from-top-[48%]">
 					<div className="relative flex aspect-video overflow-hidden border-b border-app-line/50 bg-gradient-to-b from-app-darkBox to-app to-80% pl-5 pt-5">
 						<div
 							className={clsx(
@@ -99,7 +93,7 @@ const EphemeralNotice = ({ path }: { path: string }) => {
 
 								<Tooltip
 									label={t('add_location_tooltip')}
-									className="z-50 w-max min-w-0 shrink animate-pulse [animation-duration:_3000ms] hover:animate-none"
+									className="animate-duration-[3000ms] z-50 w-max min-w-0 shrink animate-pulse hover:animate-none"
 								>
 									<AddLocationButton
 										path={path}
@@ -156,11 +150,9 @@ const EphemeralNotice = ({ path }: { path: string }) => {
 			</Dialog.Portal>
 		</Dialog.Root>
 	);
-};
+});
 
-const EphemeralExplorer = memo((props: { args: PathParams }) => {
-	const { path } = props.args;
-
+const EphemeralExplorer = memo(({ args: path }: { args: PathParams['path'] }) => {
 	const os = useOperatingSystem();
 
 	const explorerSettings = useExplorerSettings({
@@ -180,7 +172,6 @@ const EphemeralExplorer = memo((props: { args: PathParams }) => {
 	const settingsSnapshot = explorerSettings.useSettingsSnapshot();
 
 	const libraryCtx = useLibraryContext();
-	const cache = useNormalisedCache();
 	const query = useUnsafeStreamedQuery(
 		[
 			'search.ephemeralPaths',
@@ -195,20 +186,18 @@ const EphemeralExplorer = memo((props: { args: PathParams }) => {
 		],
 		{
 			enabled: path != null,
-			suspense: true,
-			onSuccess: () => explorerStore.resetNewThumbnails(),
-			onBatch: (item) => {
-				cache.withNodes(item.nodes);
-			}
+			onBatch: () => {}
 		}
 	);
 
+	useEffect(() => explorerStore.resetCache(), [query]);
+
 	const entries = useMemo(() => {
-		return cache.withCache(
+		return (
 			query.data?.flatMap((item) => item.entries) ||
-				query.streaming.flatMap((item) => item.entries)
+			query.streaming.flatMap((item) => item.entries)
 		);
-	}, [cache, query.streaming, query.data]);
+	}, [query.streaming, query.data]);
 
 	const items = useMemo(() => {
 		if (!entries) return [];
@@ -253,7 +242,7 @@ const EphemeralExplorer = memo((props: { args: PathParams }) => {
 					<EmptyNotice
 						loading={query.isFetching}
 						icon={<Icon name="FolderNoSpace" size={128} />}
-						message={t('no_files_found_here')}
+						message={t('location_empty_notice_message')}
 					/>
 				}
 			/>
@@ -262,15 +251,15 @@ const EphemeralExplorer = memo((props: { args: PathParams }) => {
 });
 
 export const Component = () => {
-	const [pathParams] = useZodSearchParams(PathParamsSchema);
+	let [{ path }] = useZodSearchParams(PathParamsSchema);
 
-	const path = useDeferredValue(pathParams);
+	path = useDeferredValue(path);
 
-	useRouteTitle(path.path ?? '');
+	useRouteTitle(path ?? '');
 
 	return (
 		<Suspense>
-			<EphemeralNotice path={path.path ?? ''} />
+			<EphemeralNotice path={path ?? ''} />
 			<EphemeralExplorer args={path} />
 		</Suspense>
 	);

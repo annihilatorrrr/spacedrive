@@ -1,12 +1,12 @@
+import * as Haptics from 'expo-haptics';
 import { ArrowRight } from 'phosphor-react-native';
 import React from 'react';
 import { Controller } from 'react-hook-form';
 import { Linking, Pressable, Text, View, ViewStyle } from 'react-native';
+import { useOnboardingContext } from '~/components/context/OnboardingContext';
 import { Button } from '~/components/primitive/Button';
 import { tw, twStyle } from '~/lib/tailwind';
-import { OnboardingStackScreenProps } from '~/navigation/OnboardingNavigator';
 
-import { useOnboardingContext } from './context';
 import { OnboardingContainer, OnboardingDescription, OnboardingTitle } from './GetStarted';
 
 type RadioButtonProps = {
@@ -59,29 +59,41 @@ const PrivacyScreen = () => {
 					control={form.control}
 					render={({ field: { onChange, value } }) => (
 						<>
-							<Pressable onPress={() => onChange('share-telemetry')}>
+							<Pressable onPress={() => onChange('full')}>
 								<RadioButton
-									title="Share anonymous usage"
-									description="Share completely anonymous telemetry data to help the developers improve the app"
-									isSelected={value === 'share-telemetry'}
+									title="Share anonymous usage data"
+									description="This give us a completely anonymous picture of how you use Spacedrive."
+									isSelected={value === 'full'}
 									style={tw`mb-3 mt-4`}
 								/>
 							</Pressable>
-							<Pressable
-								testID="share-minimal"
-								onPress={() => onChange('minimal-telemetry')}
-							>
+							<Pressable testID="share-minimal" onPress={() => onChange('minimal')}>
 								<RadioButton
-									title="Share the bare minimum"
-									description="Only share that I am an active user of Spacedrive and a few technical bits"
-									isSelected={value === 'minimal-telemetry'}
+									title="Share minimal data"
+									description="This just tells us how many people use Spacedrive and device/version details."
+									isSelected={value === 'minimal'}
+								/>
+							</Pressable>
+							<Pressable testID="share-none" onPress={() => onChange('none')}>
+								<RadioButton
+									title="Don't share anything"
+									description="Sends absolutely no analytics data from the Spacedrive app."
+									isSelected={value === 'none'}
 								/>
 							</Pressable>
 						</>
 					)}
 				/>
 			</View>
-			<Button variant="accent" size="sm" onPress={form.handleSubmit(submit)} style={tw`mt-6`}>
+			<Button
+				variant="accent"
+				size="sm"
+				onPress={() => {
+					Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+					form.handleSubmit(submit)();
+				}}
+				style={tw`mt-6`}
+			>
 				<Text style={tw`text-center text-base font-medium text-ink`}>Continue</Text>
 			</Button>
 			<Pressable

@@ -9,7 +9,7 @@ import { forwardRef, PropsWithChildren } from 'react';
 
 export const selectStyles = cva(
 	[
-		'flex items-center justify-between rounded-md border py-0.5 pl-3 pr-[10px] text-sm',
+		'flex items-center justify-between whitespace-nowrap rounded-md border py-0.5 pl-3 pr-[10px] text-sm',
 		'shadow-sm outline-none transition-all focus:ring-2',
 		'text-ink radix-placeholder:text-ink-faint'
 	],
@@ -56,14 +56,16 @@ export const Select = forwardRef(
 				<RS.Trigger
 					className={selectStyles({ size: props.size, className: props.className })}
 				>
-					<RS.Value placeholder={props.placeholder} />
+					<span className="truncate">
+						<RS.Value placeholder={props.placeholder} />
+					</span>
 					<RS.Icon className="ml-2">
 						<ChevronDouble className="text-ink-dull" />
 					</RS.Icon>
 				</RS.Trigger>
 
 				<RS.Portal>
-					<RS.Content className="z-50 rounded-md border border-app-line bg-app-box shadow-2xl shadow-app-shade/20 ">
+					<RS.Content className="z-[100] rounded-md border border-app-line bg-app-box shadow-2xl shadow-app-shade/20">
 						<RS.Viewport className="p-1">{props.children}</RS.Viewport>
 					</RS.Content>
 				</RS.Portal>
@@ -82,12 +84,12 @@ export function SelectOption(props: PropsWithChildren<{ value: string; default?:
 			className={clsx(
 				'relative flex h-6 cursor-pointer select-none items-center rounded pl-6 pr-3',
 				'text-sm text-ink radix-highlighted:text-white',
-				'focus:outline-none radix-disabled:opacity-50 radix-highlighted:bg-accent '
+				'focus:outline-none radix-disabled:opacity-50 radix-highlighted:bg-accent'
 			)}
 		>
 			<RS.ItemText>{props.children}</RS.ItemText>
 			<RS.ItemIndicator className="absolute left-1 inline-flex items-center">
-				<Check className="h-4 w-4" />
+				<Check className="size-4" />
 			</RS.ItemIndicator>
 		</RS.Item>
 	);

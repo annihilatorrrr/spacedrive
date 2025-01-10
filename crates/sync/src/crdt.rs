@@ -1,71 +1,76 @@
-use std::fmt::Debug;
+use crate::{DevicePubId, ModelId};
+
+use std::{collections::BTreeMap, fmt};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use specta::Type;
 use uhlc::NTP64;
-use uuid::Uuid;
 
 pub enum OperationKind<'a> {
 	Create,
-	Update(&'a str),
+	Update(Vec<&'a str>),
 	Delete,
 }
 
-impl std::fmt::Display for OperationKind<'_> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for OperationKind<'_> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			OperationKind::Create => write!(f, "c"),
-			OperationKind::Update(field) => write!(f, "u:{field}"),
+			OperationKind::Update(fields) => write!(f, "u:{}:", fields.join(":")),
 			OperationKind::Delete => write!(f, "d"),
 		}
 	}
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Clone, Debug, Type)]
+#[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub enum CRDTOperationData {
 	#[serde(rename = "c")]
-	Create,
+	Create(BTreeMap<String, rmpv::Value>),
 	#[serde(rename = "u")]
-	Update { field: String, value: Value },
+	Update(BTreeMap<String, rmpv::Value>),
 	#[serde(rename = "d")]
 	Delete,
 }
 
 impl CRDTOperationData {
-	pub fn as_kind(&self) -> OperationKind {
+	#[must_use]
+	pub fn create() -> Self {
+		Self::Create(BTreeMap::default())
+	}
+
+	#[must_use]
+	pub fn as_kind(&self) -> OperationKind<'_> {
 		match self {
-			Self::Create => OperationKind::Create,
-			Self::Update { field, .. } => OperationKind::Update(field),
+			Self::Create(_) => OperationKind::Create,
+			Self::Update(fields_and_values) => {
+				OperationKind::Update(fields_and_values.keys().map(String::as_str).collect())
+			}
 			Self::Delete => OperationKind::Delete,
 		}
 	}
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Clone, Type)]
+#[derive(PartialEq, Serialize, Deserialize, Clone)]
 pub struct CRDTOperation {
-	pub instance: Uuid,
-	#[specta(type = u32)]
+	pub device_pub_id: DevicePubId,
 	pub timestamp: NTP64,
-	pub id: Uuid,
-	pub model: String,
-	pub record_id: Value,
+	pub model_id: ModelId,
+	pub record_id: rmpv::Value,
 	pub data: CRDTOperationData,
 }
 
 impl CRDTOperation {
 	#[must_use]
-	pub fn kind(&self) -> OperationKind {
+	pub fn kind(&self) -> OperationKind<'_> {
 		self.data.as_kind()
 	}
 }
 
-impl Debug for CRDTOperation {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for CRDTOperation {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("CRDTOperation")
-			.field("instance", &self.instance.to_string())
-			.field("timestamp", &self.timestamp.to_string())
-			// .field("typ", &self.typ)
-			.finish()
+			.field("data", &self.data)
+			.field("model", &self.model_id)
+			.field("record_id", &self.record_id.to_string())
+			.finish_non_exhaustive()
 	}
 }

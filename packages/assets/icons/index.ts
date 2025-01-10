@@ -10,6 +10,9 @@ import Alias_Light from './Alias_Light.png';
 import Alias20 from './Alias-20.png';
 import Alias from './Alias.png';
 import AmazonS3 from './AmazonS3.png';
+import AndroidPhotos from './AndroidPhotos.png';
+import AppleFiles from './AppleFiles.png';
+import ApplePhotos from './ApplePhotos.png';
 import Application_Light from './Application_Light.png';
 import Application from './Application.png';
 import Archive_Light from './Archive_Light.png';
@@ -25,6 +28,8 @@ import Book20 from './Book-20.png';
 import Book from './Book.png';
 import BookBlue from './BookBlue.png';
 import Box from './Box.png';
+import CloudSync_Light from './CloudSync_Light.png';
+import CloudSync from './CloudSync.png';
 import Code20 from './Code-20.png';
 import Collection_Light from './Collection_Light.png';
 import Collection20 from './Collection-20.png';
@@ -42,6 +47,7 @@ import Document_doc from './Document_doc.png';
 import Document_Light from './Document_Light.png';
 import Document_pdf_Light from './Document_pdf_Light.png';
 import Document_pdf from './Document_pdf.png';
+import Document_srt from './Document_srt.png';
 import Document_xls_Light from './Document_xls_Light.png';
 import Document_xls from './Document_xls.png';
 import Document_xmp from './Document_xmp.png';
@@ -126,7 +132,9 @@ import Mega from './Mega.png';
 import Mesh_Light from './Mesh_Light.png';
 import Mesh20 from './Mesh-20.png';
 import Mesh from './Mesh.png';
+import MiniSilverBox from './MiniSilverBox.png';
 import Mobile_Light from './Mobile_Light.png';
+import MobileAndroid from './Mobile-Android.png';
 import Mobile from './Mobile.png';
 import MoveLocation_Light from './MoveLocation_Light.png';
 import MoveLocation from './MoveLocation.png';
@@ -140,6 +148,7 @@ import OpenStack from './OpenStack.png';
 import Package_Light from './Package_Light.png';
 import Package20 from './Package-20.png';
 import Package from './Package.png';
+import PC from './PC.png';
 import PCloud from './PCloud.png';
 import Scrapbook_Light from './Scrapbook_Light.png';
 import Scrapbook from './Scrapbook.png';
@@ -158,6 +167,8 @@ import SilverBox from './SilverBox.png';
 import Spacedrop_Light from './Spacedrop_Light.png';
 import Spacedrop1 from './Spacedrop-1.png';
 import Spacedrop from './Spacedrop.png';
+import Sync_Light from './Sync_Light.png';
+import Sync from './Sync.png';
 import Tablet_Light from './Tablet_Light.png';
 import Tablet from './Tablet.png';
 import Tags_Light from './Tags_Light.png';
@@ -193,6 +204,9 @@ export {
 	Alias,
 	Alias_Light,
 	AmazonS3,
+	AndroidPhotos,
+	AppleFiles,
+	ApplePhotos,
 	Application,
 	Application_Light,
 	Archive20,
@@ -208,6 +222,8 @@ export {
 	BookBlue,
 	Book_Light,
 	Box,
+	CloudSync,
+	CloudSync_Light,
 	Code20,
 	Collection20,
 	Collection,
@@ -227,6 +243,7 @@ export {
 	Document_doc_Light,
 	Document_pdf,
 	Document_pdf_Light,
+	Document_srt,
 	Document_xls,
 	Document_xls_Light,
 	Document_xmp,
@@ -309,6 +326,8 @@ export {
 	Mesh20,
 	Mesh,
 	Mesh_Light,
+	MiniSilverBox,
+	MobileAndroid,
 	Mobile,
 	Mobile_Light,
 	MoveLocation,
@@ -320,6 +339,7 @@ export {
 	Node_Light,
 	OneDrive,
 	OpenStack,
+	PC,
 	PCloud,
 	Package20,
 	Package,
@@ -341,6 +361,8 @@ export {
 	Spacedrop1,
 	Spacedrop,
 	Spacedrop_Light,
+	Sync,
+	Sync_Light,
 	Tablet,
 	Tablet_Light,
 	Tags,

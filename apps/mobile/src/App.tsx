@@ -11,21 +11,23 @@ import duration from 'dayjs/plugin/duration';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { checkManagePermission, requestManagePermission } from 'manage-external-storage';
 import { useEffect, useRef, useState } from 'react';
-import { LogBox } from 'react-native';
+import { Alert, LogBox, Permission, PermissionsAndroid, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MenuProvider } from 'react-native-popup-menu';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import SuperTokens from 'supertokens-react-native';
 import { useSnapshot } from 'valtio';
 import {
-	CacheProvider,
 	ClientContextProvider,
-	createCache,
-	initPlausible,
+	configureAnalyticsProperties,
 	LibraryContextProvider,
 	P2PContextProvider,
 	RspcProvider,
+	useBridgeMutation,
 	useBridgeQuery,
+	useBridgeSubscription,
 	useClientContext,
 	useInvalidateQuery,
 	usePlausibleEvent,
@@ -34,12 +36,13 @@ import {
 } from '@sd/client';
 
 import { GlobalModals } from './components/modal/GlobalModals';
-import { Toast, toastConfig } from './components/primitive/Toast';
+import { toast, Toast, toastConfig } from './components/primitive/Toast';
 import { useTheme } from './hooks/useTheme';
 import { changeTwTheme, tw } from './lib/tailwind';
 import RootNavigator from './navigation';
 import OnboardingNavigator from './navigation/OnboardingNavigator';
-import { P2P } from './screens/p2p';
+import { P2P } from './screens/p2p/P2P';
+import { AUTH_SERVER_URL } from './utils';
 import { currentLibraryStore } from './utils/nav';
 
 LogBox.ignoreLogs(['Sending `onAnimatedValueUpdate` with no listeners registered.']);
@@ -57,12 +60,16 @@ function AppNavigation() {
 	const plausibleEvent = usePlausibleEvent();
 	const buildInfo = useBridgeQuery(['buildInfo']);
 
-	initPlausible({ platformType: 'mobile', buildInfo: buildInfo?.data });
-
 	const navRef = useNavigationContainerRef();
 	const routeNameRef = useRef<string>();
 
 	const [currentPath, setCurrentPath] = useState<string>('/');
+
+	useEffect(() => {
+		if (buildInfo?.data) {
+			configureAnalyticsProperties({ platformType: 'mobile', buildInfo: buildInfo.data });
+		}
+	}, [buildInfo]);
 
 	usePlausiblePageViewMonitor({ currentPath });
 	usePlausiblePingMonitor({ currentPath });
@@ -75,9 +82,11 @@ function AppNavigation() {
 		return () => clearInterval(interval);
 	}, [plausibleEvent]);
 
-	if (library === null && libraries.data) {
-		currentLibraryStore.id = libraries.data[0]?.uuid ?? null;
-	}
+	useEffect(() => {
+		if (library === null && libraries.data) {
+			currentLibraryStore.id = libraries.data[0]?.uuid ?? null;
+		}
+	}, [library, libraries]);
 
 	return (
 		<NavigationContainer
@@ -103,7 +112,7 @@ function AppNavigation() {
 					if (navRef.getRootState().routeNames.includes('GetStarted')) {
 						return;
 					}
-					currentRouteName && setCurrentPath(currentRouteName);
+					if (currentRouteName) setCurrentPath(currentRouteName);
 				}
 			}}
 		>
@@ -124,6 +133,41 @@ function AppContainer() {
 	useInvalidateQuery();
 
 	const { id } = useSnapshot(currentLibraryStore);
+	const userResponse = useBridgeMutation('cloud.userResponse');
+
+	useBridgeSubscription(['cloud.listenCloudServicesNotifications'], {
+		onData: (d) => {
+			console.log('Received cloud service notification', d);
+			switch (d.kind) {
+				case 'ReceivedJoinSyncGroupRequest':
+					// WARNING: This is a debug solution to accept the device into the sync group. THIS SHOULD NOT MAKE IT TO PRODUCTION
+					userResponse.mutate({
+						kind: 'AcceptDeviceInSyncGroup',
+						data: {
+							ticket: d.data.ticket,
+							accepted: {
+								id: d.data.sync_group.library.pub_id,
+								name: d.data.sync_group.library.name,
+								description: null
+							}
+						}
+					});
+					// TODO: Move the code above into the dialog below (@Rocky43007)
+					// dialogManager.create((dp) => (
+					// 	<RequestAddDialog
+					// 		device_model={'MacBookPro'}
+					// 		device_name={"Arnab's Macbook"}
+					// 		library_name={"Arnab's Library"}
+					// 		{...dp}
+					// 	/>
+					// ));
+					break;
+				default:
+					toast.info(`Cloud Service Notification: ${d.kind}`);
+					break;
+			}
+		}
+	});
 
 	return (
 		<SafeAreaProvider style={tw`flex-1 bg-black`}>
@@ -146,18 +190,62 @@ function AppContainer() {
 }
 
 const queryClient = new QueryClient();
-const cache = createCache();
 
 export default function App() {
 	useEffect(() => {
+		global.Intl = require('intl');
+		require('intl/locale-data/jsonp/en'); //TODO(@Rocky43007): Setup a way to import all the languages we support, once we add localization on mobile.
+		SuperTokens.init({
+			apiDomain: AUTH_SERVER_URL,
+			apiBasePath: '/api/auth'
+		});
 		SplashScreen.hideAsync();
+		if (Platform.OS === 'android') {
+			(async () => {
+				await requestPermissions();
+			})();
+		}
 	}, []);
-
 	return (
 		<RspcProvider queryClient={queryClient}>
-			<CacheProvider cache={cache}>
-				<AppContainer />
-			</CacheProvider>
+			<AppContainer />
 		</RspcProvider>
 	);
 }
+
+const requestPermissions = async () => {
+	try {
+		const granted = await PermissionsAndroid.requestMultiple([
+			PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+			PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+			PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO
+		] as Permission[]);
+
+		if (
+			granted['android.permission.READ_MEDIA_AUDIO'] === PermissionsAndroid.RESULTS.GRANTED &&
+			granted['android.permission.READ_MEDIA_IMAGES'] ===
+				PermissionsAndroid.RESULTS.GRANTED &&
+			granted['android.permission.READ_MEDIA_VIDEO'] === PermissionsAndroid.RESULTS.GRANTED &&
+			PermissionsAndroid.RESULTS.GRANTED
+		) {
+			const check_MANAGE_EXTERNAL_STORAGE = await checkManagePermission();
+
+			if (!check_MANAGE_EXTERNAL_STORAGE) {
+				const request = await requestManagePermission();
+				if (!request) {
+					Alert.alert(
+						'Permission Denied',
+						'MANAGE_EXTERNAL_STORAGE permission was denied. The app may not function as expected. Please enable it in the app settings.'
+					);
+				}
+			}
+		} else {
+			Alert.alert(
+				'Permission Denied',
+				'Some permissions were denied. The app may not function as expected. Please enable them in the app settings'
+			);
+		}
+	} catch (err) {
+		console.warn(err);
+	}
+};

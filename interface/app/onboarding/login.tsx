@@ -13,7 +13,7 @@ export default function OnboardingLogin() {
 	const authState = auth.useStateSnapshot();
 	const navigate = useNavigate();
 
-	const me = useBridgeQuery(['auth.me'], { retry: false });
+	// const me = useBridgeQuery(['auth.me'], { retry: false });
 
 	return (
 		<OnboardingContainer>
@@ -31,7 +31,7 @@ export default function OnboardingLogin() {
 							className="mb-3"
 						/>
 						<h1 className="text-lg text-ink">
-							Logged in as <b>{me.data?.email}</b>
+							Logged in as <b> TODO </b>
 						</h1>
 					</div>
 
@@ -70,9 +70,7 @@ export default function OnboardingLogin() {
 							draggable={false}
 							className="mb-3"
 						/>
-						<h1 className="text-lg text-ink">
-							Log in to <b>Spacedrive</b>
-						</h1>
+						<h1 className="text-lg text-ink">Log in to Spacedrive</h1>
 					</div>
 
 					<div className="mt-10 flex w-[250px] flex-col gap-3">

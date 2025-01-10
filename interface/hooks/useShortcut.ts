@@ -18,9 +18,20 @@ const shortcuts = {
 		macOS: ['Meta', 'KeyW'],
 		all: ['Control', 'KeyW']
 	},
+	duplicateTab: {
+		macOS: ['Meta', 'Shift', 'KeyT'],
+		all: ['Control', 'Shift', 'KeyT']
+	},
 	nextTab: {
 		macOS: ['Meta', 'Alt', 'ArrowRight'],
 		all: ['Control', 'Alt', 'ArrowRight']
+	},
+	toggleCommandPalette: {
+		macOS: ['Meta', 'KeyK'],
+		all: ['Control', 'KeyK']
+	},
+	closeCommandPalette: {
+		all: ['Escape']
 	},
 	previousTab: {
 		macOS: ['Meta', 'Alt', 'ArrowLeft'],
@@ -30,6 +41,10 @@ const shortcuts = {
 		macOS: ['Meta', 'KeyJ'],
 		all: ['Control', 'KeyJ']
 	},
+	toggleTagAssignMode: {
+		macOS: ['Meta', 'Alt', 'KeyT'],
+		all: ['Control', 'Alt', 'KeyT']
+	},
 	navBackwardHistory: {
 		macOS: ['Meta', '['],
 		all: ['Control', '[']
@@ -38,10 +53,11 @@ const shortcuts = {
 		macOS: ['Meta', ']'],
 		all: ['Control', ']']
 	},
-	navToSettings: {
-		macOS: ['Shift', 'Meta', 'KeyT'],
-		all: ['Shift', 'Control', 'KeyT']
-	},
+	// I plan to change this to the OS-standard cmd-comma later -ilynxcat
+	// navToSettings: {
+	// 	macOS: ['Shift', 'Meta', 'KeyT'],
+	// 	all: ['Shift', 'Control', 'KeyT']
+	// },
 	gridView: {
 		macOS: ['Meta', '1'],
 		all: ['Control', '1']
@@ -119,6 +135,9 @@ const shortcuts = {
 		macOS: ['Meta', 'KeyO'],
 		all: ['Enter']
 	},
+	closeQuickPreview: {
+		all: ['Escape']
+	},
 	delItem: {
 		macOS: ['Meta', 'Backspace'],
 		all: ['Delete']
@@ -137,6 +156,18 @@ const shortcuts = {
 	},
 	explorerRight: {
 		all: ['ArrowRight']
+	},
+	toggleSidebar: {
+		all: ['Control', 'KeyS'],
+		macOS: ['Meta', 'KeyS']
+	},
+	zoomIn: {
+		macOS: ['Meta', '='],
+		all: ['Control', '=']
+	},
+	zoomOut: {
+		macOS: ['Meta', '-'],
+		all: ['Control', '-']
 	}
 } satisfies Record<string, Shortcut>;
 
@@ -147,7 +178,11 @@ export const shortcutsStore = valtioPersist(
 	shortcuts as Record<Shortcuts, Shortcut>
 );
 
-export const useShortcut = (shortcut: Shortcuts, func: (e: KeyboardEvent) => void) => {
+export const useShortcut = (
+	shortcut: Shortcuts,
+	func: (e: KeyboardEvent) => void,
+	options: Omit<Parameters<typeof useKeys>[2], 'when'> & { disabled?: boolean } = {}
+) => {
 	const os = useOperatingSystem(true);
 	const shortcuts = useSnapshot(shortcutsStore);
 	const { visible } = useRoutingContext();
@@ -158,9 +193,15 @@ export const useShortcut = (shortcut: Shortcuts, func: (e: KeyboardEvent) => voi
 	}, [os, shortcut, shortcuts, visible]);
 
 	// useKeys doesn't like readonly
-	useKeys(keys as string[], (e) => {
-		if (!visible) return;
-		if (!import.meta.env.DEV) e.preventDefault();
-		return func(e);
-	});
+	useKeys(
+		keys as string[],
+		(e) => {
+			if (!import.meta.env.DEV) e.preventDefault();
+			return func(e);
+		},
+		{
+			...options,
+			when: visible && !options.disabled
+		}
+	);
 };

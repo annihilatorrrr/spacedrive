@@ -3,13 +3,34 @@ import { dirname, join as joinPath } from 'node:path'
 import { env } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { fetch, Headers } from 'undici'
+import { getSystemProxy } from 'os-proxy-config'
+import { Agent, fetch, Headers, ProxyAgent } from 'undici'
 
+const CONNECT_TIMEOUT = 5 * 60 * 1000
 const __debug = env.NODE_ENV === 'debug'
 const __offline = env.OFFLINE === 'true'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const cacheDir = joinPath(__dirname, '.tmp')
+
+/** @type {Agent.Options} */
+const agentOpts = {
+	allowH2: !!env.HTTP2,
+	connect: { timeout: CONNECT_TIMEOUT },
+	connectTimeout: CONNECT_TIMEOUT,
+	autoSelectFamily: true,
+}
+
+const { proxyUrl } = (await getSystemProxy()) ?? {}
+const dispatcher = proxyUrl
+	? new ProxyAgent({
+			...agentOpts,
+			proxyTls: { timeout: CONNECT_TIMEOUT },
+			requestTls: { timeout: CONNECT_TIMEOUT },
+			uri: proxyUrl,
+		})
+	: new Agent(agentOpts)
+
 await fs.mkdir(cacheDir, { recursive: true, mode: 0o751 })
 
 /**
@@ -24,7 +45,7 @@ async function getCache(resource, headers) {
 	let header
 
 	// Don't cache in CI
-	if (env.CI === 'true') return null
+	if (env.CI === 'true' || env.NO_CACHE === 'true') return null
 
 	if (headers)
 		resource += Array.from(headers.entries())
@@ -124,7 +145,8 @@ export async function get(resource, headers, preferCache) {
 
 	if (cache?.header) headers.append(...cache.header)
 
-	const response = await fetch(resource, { headers })
+	if (__debug) console.log(`Downloading ${resource} ${cache?.data ? ' (cached)' : ''}...`)
+	const response = await fetch(resource, { dispatcher, headers })
 
 	if (!response.ok) {
 		if (cache?.data) {

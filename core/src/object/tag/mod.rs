@@ -3,10 +3,8 @@ use crate::library::Library;
 use sd_prisma::{prisma::tag, prisma_sync};
 use sd_sync::*;
 
-use chrono::{DateTime, FixedOffset, Utc};
-
+use chrono::Utc;
 use serde::Deserialize;
-use serde_json::json;
 use specta::Type;
 use uuid::Uuid;
 
@@ -22,34 +20,27 @@ impl TagCreateArgs {
 	pub async fn exec(
 		self,
 		Library { db, sync, .. }: &Library,
-	) -> prisma_client_rust::Result<tag::Data> {
-		let pub_id = Uuid::new_v4().as_bytes().to_vec();
-		let date_created: DateTime<FixedOffset> = Utc::now().into();
+	) -> Result<tag::Data, sd_core_sync::Error> {
+		let pub_id = Uuid::now_v7().as_bytes().to_vec();
 
-		sync.write_ops(
+		let (sync_params, db_params) = [
+			sync_db_entry!(self.name, tag::name),
+			sync_db_entry!(self.color, tag::color),
+			sync_db_entry!(false, tag::is_hidden),
+			sync_db_entry!(Utc::now(), tag::date_created),
+		]
+		.into_iter()
+		.unzip::<_, _, Vec<_>, Vec<_>>();
+
+		sync.write_op(
 			db,
-			(
-				sync.shared_create(
-					prisma_sync::tag::SyncId {
-						pub_id: pub_id.clone(),
-					},
-					[
-						(tag::name::NAME, json!(&self.name)),
-						(tag::color::NAME, json!(&self.color)),
-						(tag::is_hidden::NAME, json!(false)),
-						(tag::date_created::NAME, json!(&date_created.to_rfc3339())),
-					],
-				),
-				db.tag().create(
-					pub_id,
-					vec![
-						tag::name::set(Some(self.name)),
-						tag::color::set(Some(self.color)),
-						tag::is_hidden::set(Some(false)),
-						tag::date_created::set(Some(date_created)),
-					],
-				),
+			sync.shared_create(
+				prisma_sync::tag::SyncId {
+					pub_id: pub_id.clone(),
+				},
+				sync_params,
 			),
+			db.tag().create(pub_id, db_params),
 		)
 		.await
 	}
